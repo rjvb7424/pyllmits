@@ -371,6 +371,11 @@ class ExperimentRunner:
                 )
             LOG.info("Found existing results - resuming (config matches).")
             existing.setdefault("config_fingerprint", fingerprint)
+            # Keep these current: on resume the config's num_trials may have
+            # grown (e.g. 4 -> 8), and the stored value would otherwise stay
+            # stale and mislead the plots.
+            existing["num_trials"] = self.cfg.experiment.num_trials
+            existing["max_turns"] = self.cfg.experiment.max_turns
             return existing
         return {
             "experiment": self.cfg.experiment.name,
