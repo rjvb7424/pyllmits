@@ -72,11 +72,19 @@ def main() -> None:
     ap.add_argument("--skip-run", action="store_true", help="don't run trials")
     ap.add_argument("--skip-analyze", action="store_true", help="don't build plots")
     ap.add_argument("--skip-viewer", action="store_true", help="don't build viewer.html")
+    ap.add_argument("--rebuild-videos", action="store_true",
+                    help="regenerate every model's video from results.json (no model "
+                         "calls) and exit - fixes videos after a resumed run")
     args = ap.parse_args()
 
     configure_logging()
     load_env()
     cfg = load_config(args.config)
+
+    if args.rebuild_videos:
+        runner = ExperimentRunner(cfg, live=False, open_browser=False)
+        runner.rebuild_videos()
+        return
 
     live = not args.no_live
     runner = None
@@ -96,6 +104,7 @@ def main() -> None:
         analyze_results.plot_turns_to_success(rows, cfg.plots_dir / "turns_to_success.png", name)
         analyze_results.plot_think_time(rows, cfg.plots_dir / "think_time.png", name)
         analyze_results.plot_success_matrix(rows, cfg.plots_dir / "success_matrix.png", name)
+        analyze_results.plot_tokens_vs_turns(results, cfg.plots_dir / "token_usage.png", name)
         analyze_results.print_summary(results, rows)
 
     if not args.skip_viewer:

@@ -106,6 +106,12 @@ class ExperimentRunner:
 
         successes = sum(1 for t in record["trials"] if t["success"])
         writer = self._new_video_writer(spec)
+        # On resume, replay the already-completed trials into the fresh video
+        # first, so the rewritten file covers the whole run - not just the new
+        # trials. (The video file is always rewritten from scratch.)
+        if writer is not None and done > 0:
+            for i in range(done):
+                self._render_recorded_trial(spec.name, i, record["trials"][i], writer)
         try:
             for trial in range(done, total):
                 LOG.info("[%s] trial %d/%d ...", spec.name, trial + 1, total)
@@ -145,6 +151,55 @@ class ExperimentRunner:
         size = (width * self._tile_px, height * self._tile_px)
         out = self.cfg.videos_dir / f"{spec.slug}.mp4"
         return videos.VideoWriter(out, self.cfg.experiment.video_fps, size)
+
+    def _render_recorded_trial(self, model_name, trial_index, trial, writer) -> None:
+        """Replay a finished trial's recorded actions to regenerate its frames.
+
+        The world is static and seeded, so replaying the stored action_index
+        sequence from the trial's world_seed reproduces the exact frames (zombie
+        positions included). This lets us rebuild a full video from results.json
+        without re-running the model - so resuming never loses earlier footage.
+        """
+        writer.title([model_name, f"trial {trial_index + 1}"])
+        self.env.set_world_seed(int(trial["world_seed"]))
+        self.env.reset()
+        last_frame = None
+        for turn in trial.get("turns", []):
+            frame = self.renderer.render_array(self.env.world, self.env.player)
+            writer.frame(frame)
+            last_frame = frame
+            self.env.step(int(turn["action_index"]))
+        if last_frame is not None:
+            writer.hold(last_frame)
+        writer.title(
+            [f"trial {trial_index + 1}", "solved" if trial.get("success") else "not solved"],
+            hold=4,
+        )
+
+    def rebuild_videos(self) -> None:
+        """Regenerate every model's video from results.json (no model calls).
+
+        Use after resuming, or any time a video is missing trials: it replays all
+        recorded trials so the video always covers the full run in results.json.
+        """
+        models = self.results.get("models", {})
+        if not models:
+            LOG.info("no results to rebuild videos from.")
+            return
+        for name, record in models.items():
+            trials = record.get("trials", [])
+            if not trials:
+                continue
+            slug = record.get("slug") or name.replace("/", "_")
+            width, height = self.cfg.world.size
+            size = (width * self._tile_px, height * self._tile_px)
+            out = self.cfg.videos_dir / f"{slug}.mp4"
+            writer = videos.VideoWriter(out, self.cfg.experiment.video_fps, size)
+            for i, trial in enumerate(trials):
+                self._render_recorded_trial(name, i, trial, writer)
+            path = writer.close()
+            if path:
+                LOG.info("[%s] rebuilt video (%d trials): %s", name, len(trials), path)
 
     # =========================================================================
     #  One trial
