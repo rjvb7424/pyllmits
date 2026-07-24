@@ -121,7 +121,6 @@ world:
       positions:
         - [5, 5]
         - [11, 8]
-        - [8, 13]
 
 prompt:
   include_legend: true
