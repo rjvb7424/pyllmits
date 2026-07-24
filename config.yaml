@@ -119,8 +119,7 @@ world:
   entities:
     zombie:
       positions:
-        - [5, 5]
-        - [11, 8]
+        - [9, 8]
 
 prompt:
   include_legend: true

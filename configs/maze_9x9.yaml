@@ -1,0 +1,131 @@
+# 9x9 maze: player top-left, tree top-right.
+experiment:
+  name: maze_9x9
+  output_dir: runs
+  num_trials: 5
+  max_turns: 50
+  seed: 0
+  same_world_each_trial: true
+  record_video: true
+  video_fps: 6
+
+objective:
+  type: achievement
+  target: collect_wood
+  item: wood
+  amount: 1
+
+world:
+  size: [9, 9]
+  base_terrain: grass
+  player_start: [0, 0]
+  static: true
+  freeze_daylight: true
+  inventory: {}
+
+  features:
+    trees:
+      positions:
+        - [8, 0]
+
+    water:
+      positions:
+        # First wall, with an opening near the bottom.
+        - [2, 0]
+        - [2, 1]
+        - [2, 2]
+        - [2, 3]
+        - [2, 4]
+        - [2, 5]
+        - [2, 6]
+        - [2, 8]
+
+        # Second wall, with an opening near the top.
+        - [5, 0]
+        - [5, 2]
+        - [5, 3]
+        - [5, 4]
+        - [5, 5]
+        - [5, 6]
+        - [5, 7]
+        - [5, 8]
+
+prompt:
+  include_legend: true
+  include_inventory: true
+  include_achievements: true
+  include_action_list: true
+
+  system: |
+    You are playing Crafter in a grid-based world.
+
+    Choose exactly one action each turn to make progress toward the objective.
+
+    Your position is given as [x, y]:
+    - x increases to the right.
+    - y increases downward.
+
+    You have a facing direction. Actions may move you, change your facing
+    direction, or interact with the tile in front of you.
+
+    Respond with only one action name copied exactly from the available actions.
+
+    Do not explain your reasoning.
+    Do not add punctuation.
+    Do not use labels such as "ACTION:".
+    Do not provide more than one action.
+
+  user: |
+    OBJECTIVE:
+    {objective}
+
+    MAP:
+    {map}
+
+    LEGEND:
+    {legend}
+
+    POSITION: {position}
+    FACING: {facing}
+
+    INVENTORY:
+    {inventory}
+
+    ACHIEVEMENTS:
+    {achievements}
+
+    AVAILABLE ACTIONS:
+    {actions}
+
+    Respond with only the single action you choose.
+
+actions:
+  strategy: keyword
+  fallback: noop
+
+models:
+  - name: gpt-5.4-2026-03-05
+    backend: openai
+    temperature: 0.7
+    request_delay: 3.0
+    dtype: auto
+    device: auto
+
+  - name: microsoft/phi-4
+    backend: huggingface-api
+    max_tokens: 256
+    temperature: 0.7
+    dtype: auto
+    device: auto
+
+  - name: o3-2025-04-16
+    backend: openai
+    temperature: 0.7
+    request_delay: 3.0
+    dtype: auto
+    device: auto
+
+  - name: heuristic-baseline
+    backend: mock
+    policy: heuristic
+    fixed_action: noop
