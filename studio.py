@@ -62,7 +62,22 @@ OBJECTIVE_TARGETS = [
     "collect_diamond", "place_table", "make_wood_pickaxe", "make_stone_pickaxe",
     "eat_cow", "collect_drink", "defeat_zombie",
 ]
-BACKENDS = ["openai", "huggingface-api", "huggingface", "gemini", "mock"]
+BACKENDS = ["openai", "huggingface-api", "huggingface", "gemini"]
+
+# Curated model ids offered as a dropdown per backend (you can still type a
+# custom id). These are common, currently-hosted options - not exhaustive.
+MODEL_PRESETS = {
+    "openai": ["gpt-4o-mini", "gpt-4o", "o4-mini", "o3-2025-04-16",
+               "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    "huggingface-api": [
+        "Qwen/Qwen3-235B-A22B-Instruct-2507", "openai/gpt-oss-120b",
+        "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1",
+        "meta-llama/Llama-3.3-70B-Instruct", "microsoft/phi-4",
+    ],
+    "huggingface": ["microsoft/phi-4", "Qwen/Qwen2.5-7B-Instruct",
+                    "meta-llama/Llama-3.2-3B-Instruct"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+}
 
 
 # =============================================================================
@@ -168,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/meta":
                 return self._send(200, {
                     "palette": PALETTE, "objectives": OBJECTIVE_TARGETS,
-                    "backends": BACKENDS,
+                    "backends": BACKENDS, "model_presets": MODEL_PRESETS,
                 })
             if p == "/api/configs":
                 return self._send(200, {"configs": self._list_configs()})

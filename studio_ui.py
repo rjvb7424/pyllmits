@@ -52,7 +52,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <header>
   <b>Crafter Studio</b>
   <div class="tab active" data-tab="configs">Configs</div>
-  <div class="tab" data-tab="editor">Editor</div>
   <div class="tab" data-tab="run">Run</div>
   <div class="tab" data-tab="graphs">Graphs</div>
 </header>
@@ -194,7 +193,7 @@ function defaultConfig(){return {
     include_action_list:true,system:'You are playing Crafter. Reply with ONE action.',
     user:'GOAL: {objective}\n{map}\n{legend}\nPOSITION: {position} FACING: {facing}\n{inventory}\n{achievements}\n{actions}\nReply with one action.'},
   actions:{strategy:'keyword',fallback:'noop'},
-  models:[{name:'heuristic-baseline',backend:'mock',policy:'heuristic'}]};}
+  models:[{name:'gpt-4o-mini',backend:'openai',history_turns:8}]};}
 
 // ---------- Configs list ----------
 async function loadConfigs(){
@@ -253,22 +252,31 @@ function renderPalette(){$('palette').innerHTML=META.palette.map(p=>
      <span class="dot" style="background:${p.color}"></span>${p.label}</span>`).join('');}
 function W(){return +$('w_w').value;} function H(){return +$('w_h').value;}
 function blankGrid(w,h){return Array.from({length:h},()=>Array.from({length:w},()=>'grass'));}
+let CELLS=[];
 function renderGrid(){const w=W(),h=H();const g=$('grid');
   g.style.gridTemplateColumns=`repeat(${w},20px)`;
-  g.innerHTML='';
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const d=document.createElement('div');d.className='cell';
-    d.style.background=paletteInfo(GRID[y][x]).color;
-    d.title=`${x},${y}`;
-    d.onmousedown=e=>{painting=true;paint(x,y);e.preventDefault();};
-    d.onmouseenter=()=>{if(painting)paint(x,y);};
-    g.appendChild(d);}
+  g.innerHTML=''; CELLS=[];
+  for(let y=0;y<h;y++){const rowRefs=[];
+    for(let x=0;x<w;x++){
+      const d=document.createElement('div');d.className='cell';
+      d.style.background=paletteInfo(GRID[y][x]).color;
+      d.title=`${x},${y}`;
+      const cx=x, cy=y;
+      d.addEventListener('mousedown',e=>{e.preventDefault();painting=true;applyPaint(cx,cy);});
+      d.addEventListener('mouseenter',()=>{if(painting)applyPaint(cx,cy);});
+      g.appendChild(d); rowRefs.push(d);
+    } CELLS.push(rowRefs);}
 }
-document.addEventListener('mouseup',()=>painting=false);
-function paint(x,y){const info=paletteInfo(SEL);
-  if(info.kind=='player'){ // unique
-    for(let j=0;j<GRID.length;j++)for(let i=0;i<GRID[0].length;i++)if(GRID[j][i]=='player')GRID[j][i]='grass';}
-  GRID[y][x]=SEL; renderGrid();}
+// mouseup/leave anywhere ends a paint stroke - so a single click never sticks.
+document.addEventListener('mouseup',()=>{painting=false;});
+window.addEventListener('blur',()=>{painting=false;});
+function setCell(x,y,id){GRID[y][x]=id;
+  if(CELLS[y]&&CELLS[y][x])CELLS[y][x].style.background=paletteInfo(id).color;}
+function applyPaint(x,y){const info=paletteInfo(SEL);
+  if(info.kind=='player'){ // player is unique - clear any existing one
+    for(let j=0;j<GRID.length;j++)for(let i=0;i<GRID[0].length;i++)
+      if(GRID[j][i]=='player')setCell(i,j,'grass');}
+  setCell(x,y,SEL);}
 function clearGrid(){GRID=blankGrid(W(),H());renderGrid();}
 function resizeGrid(){const w=W(),h=H();const ng=blankGrid(w,h);
   for(let y=0;y<Math.min(h,GRID.length);y++)for(let x=0;x<Math.min(w,GRID[0]?.length||0);x++)ng[y][x]=GRID[y][x];
@@ -296,15 +304,26 @@ async function previewWorld(){gridToWorld();const r=await api('/api/preview','PO
   const o=$('previewOut');o.classList.remove('hidden');o.textContent=r.ok?r.map:('Error: '+r.error);}
 
 // ---------- Models ----------
-const MODEL_FIELDS=['backend','max_tokens','temperature','reasoning_effort','force_action','action_retries','request_delay','history_turns','policy'];
+function presetsFor(backend){return (META.model_presets&&META.model_presets[backend])||[];}
+function modelOptions(m){
+  const list=presetsFor(m.backend).slice();
+  if(m.name&&!list.includes(m.name))list.unshift(m.name); // keep loaded custom id
+  const opts=list.map(p=>`<option ${p==m.name?'selected':''}>${p}</option>`).join('');
+  return opts+`<option value="__custom__">(custom id...)</option>`;
+}
+function pickModel(i,v){
+  if(v=='__custom__'){const c=prompt('Enter model id:',CFG.models[i].name||'');
+    if(c)CFG.models[i].name=c; renderModels(); return;}
+  CFG.models[i].name=v;
+}
 function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>`
   <div class="card" style="background:var(--panel2)">
     <div class="flex" style="justify-content:space-between">
       <b>${m.name||'model '+(i+1)}</b><button class="bad ghost" onclick="delModel(${i})">remove</button></div>
     <div class="row">
-      <div><label>Name / model id</label><input value="${m.name||''}" oninput="CFG.models[${i}].name=this.value"></div>
-      <div><label>Backend</label><select onchange="CFG.models[${i}].backend=this.value">
+      <div><label>Backend</label><select onchange="CFG.models[${i}].backend=this.value;renderModels()">
         ${META.backends.map(b=>`<option ${b==m.backend?'selected':''}>${b}</option>`).join('')}</select></div>
+      <div><label>Model</label><select onchange="pickModel(${i},this.value)">${modelOptions(m)}</select></div>
     </div>
     <div class="row">
       <div><label>max_tokens</label><input value="${m.max_tokens??''}" oninput="setOpt(${i},'max_tokens',this.value)"></div>
@@ -318,12 +337,12 @@ function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>`
         <option value="true" ${m.force_action?'selected':''}>true</option></select></div>
       <div><label>action_retries</label><input value="${m.action_retries??''}" oninput="setOpt(${i},'action_retries',this.value)"></div>
       <div><label>request_delay</label><input value="${m.request_delay??''}" oninput="setOpt(${i},'request_delay',this.value)"></div>
-      <div><label>policy (mock)</label><input value="${m.policy??''}" oninput="CFG.models[${i}].policy=this.value"></div>
+      <div></div>
     </div>
   </div>`).join('');}
 function setOpt(i,k,v){if(v===''){delete CFG.models[i][k];return;}
-  CFG.models[i][k]=isNaN(+v)||['reasoning_effort','policy'].includes(k)?v:+v;}
-function addModel(){CFG.models.push({name:'gpt-4o-mini',backend:'openai',history_turns:8});renderModels();}
+  CFG.models[i][k]=isNaN(+v)||['reasoning_effort'].includes(k)?v:+v;}
+function addModel(){CFG.models.push({name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',history_turns:8});renderModels();}
 function delModel(i){CFG.models.splice(i,1);renderModels();}
 function modelsFromForm(){/* models edited live via oninput */}
 

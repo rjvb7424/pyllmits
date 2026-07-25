@@ -75,15 +75,17 @@ def main() -> None:
     ap.add_argument("--rebuild-videos", action="store_true",
                     help="regenerate every model's video from results.json (no model "
                          "calls) and exit - fixes videos after a resumed run")
-    ap.add_argument("--studio", action="store_true",
-                    help="open the browser Studio (build configs/worlds, view graphs, "
-                         "run experiments with play/pause) instead of running directly")
+    ap.add_argument("--run", action="store_true",
+                    help="run the experiment directly from the command line instead of "
+                         "opening the Studio (which is the default)")
     ap.add_argument("--studio-port", type=int, default=8010, help="Studio UI port")
     args = ap.parse_args()
 
     configure_logging()
 
-    if args.studio:
+    # The Studio UI is the default entry point. Direct CLI runs need --run
+    # (or --rebuild-videos, which operates on an existing run).
+    if not args.run and not args.rebuild_videos:
         import studio
         studio.serve(port=args.studio_port)
         return
