@@ -105,10 +105,14 @@ def dump_yaml(data: dict) -> str:
 #  Server state (a single active run at a time)
 # =============================================================================
 class Studio:
+    LIVE_PORT = 8000  # the existing live_viewer page; embedded in the Run tab
+
     def __init__(self):
         self.control = None      # experiment.RunControl while running
         self.thread = None
+        self.runner = None       # current ExperimentRunner (holds the live viewer)
         self.config_path = None
+        self.live_url = None
 
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
@@ -123,10 +127,17 @@ class Studio:
         self.control = RunControl()
         self.config_path = config_path
 
+        # Build the runner on this thread so its live viewer binds and we can
+        # hand the URL to the browser to embed. The trials run in a worker.
+        self.runner = ExperimentRunner(
+            cfg, live=True, live_port=self.LIVE_PORT, open_browser=False,
+            control=self.control,
+        )
+        self.live_url = self.runner.live_url
+
         def _worker():
             try:
-                runner = ExperimentRunner(cfg, live=False, control=self.control)
-                runner.run()
+                self.runner.run()
             except Exception as exc:  # surface errors to the UI
                 LOG.exception("run failed")
                 self.control.update(state="error", error=str(exc))
@@ -134,13 +145,18 @@ class Studio:
         self.thread = threading.Thread(target=_worker, daemon=True)
         self.control.update(state="running")
         self.thread.start()
-        return {"ok": True}
+        return {"ok": True, "live_url": self.live_url}
+
+    def stop_run(self):
+        if self.control:
+            self.control.stop()
 
     def status(self) -> dict:
         if self.control is None:
             return {"state": "idle"}
         s = dict(self.control.status)
         s["running"] = self.is_running()
+        s["live_url"] = self.live_url
         return s
 
 
@@ -219,6 +235,21 @@ class Handler(BaseHTTPRequestHandler):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(dump_yaml(b["data"]))
                 return self._send(200, {"ok": True, "path": str(path)})
+            if p == "/api/config/duplicate":
+                b = self._body()
+                src = Path(b["path"])
+                data = load_yaml(src)
+                # give the copy a fresh name so it gets its own run folder
+                new_name = (data.get("experiment", {}).get("name", src.stem)) + "_copy"
+                data.setdefault("experiment", {})["name"] = new_name
+                dst = src.with_name(src.stem + "_copy.yaml")
+                n = 2
+                while dst.exists():
+                    dst = src.with_name(f"{src.stem}_copy{n}.yaml"); n += 1
+                dst.write_text(dump_yaml(data))
+                return self._send(200, {"ok": True, "path": str(dst)})
+            if p == "/api/analyze":
+                return self._send(200, self._regen_graphs(self._body()["run"]))
             if p == "/api/preview":
                 return self._send(200, self._preview(self._body().get("world", {})))
             if p == "/api/run/start":
@@ -230,7 +261,7 @@ class Handler(BaseHTTPRequestHandler):
                 if STUDIO.control: STUDIO.control.resume()
                 return self._send(200, {"ok": True})
             if p == "/api/run/stop":
-                if STUDIO.control: STUDIO.control.stop()
+                STUDIO.stop_run()
                 return self._send(200, {"ok": True})
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
@@ -238,6 +269,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(500, {"error": str(exc)})
 
     # -- data helpers ---------------------------------------------------------
+    def _regen_graphs(self, run_name):
+        """Rebuild all plots for a run from its results.json (no model calls)."""
+        import json
+        import analyze_results as ar
+        rp = RUNS_DIR / run_name / "results.json"
+        if not rp.exists():
+            return {"ok": False, "error": "no results.json for this run"}
+        results = json.loads(rp.read_text())
+        rows = ar.summarise(results)
+        name = ar.get_experiment_name(results, rp)
+        plots = RUNS_DIR / run_name / "plots"
+        plots.mkdir(parents=True, exist_ok=True)
+        ar.plot_success_rate(rows, plots / "success_rate.png", name)
+        ar.plot_turns_to_success(rows, plots / "turns_to_success.png", name)
+        ar.plot_think_time(rows, plots / "think_time.png", name)
+        ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
+        ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
+        return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
+
     def _list_configs(self):
         out = []
         for d in (CONFIGS_DIR, ROOT):

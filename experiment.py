@@ -112,13 +112,14 @@ class ExperimentRunner:
 
         # Optional real-time browser view, updated once per turn during the run.
         self.live: LiveViewer | None = None
+        self.live_url: str | None = None
         if live:
             self.live = LiveViewer(
                 self.cfg.run_dir, self.cfg.experiment.name, self.checker.label,
                 port=live_port,
             )
             self.cfg.run_dir.mkdir(parents=True, exist_ok=True)
-            self.live.start(open_browser=open_browser)
+            self.live_url = self.live.start(open_browser=open_browser)
 
     # =========================================================================
     #  Top-level loop

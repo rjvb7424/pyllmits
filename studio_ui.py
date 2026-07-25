@@ -146,19 +146,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <!-- RUN -->
   <section id="tab-run" class="hidden">
     <div class="card">
-      <h3>Run experiment</h3>
-      <div class="flex">
-        <span>Config: <b id="runPath">none selected</b></span>
-        <button class="ok" onclick="runStart()">&#9654; Start</button>
-        <button class="ghost" onclick="runPause()">&#10073;&#10073; Pause</button>
-        <button class="ghost" onclick="runResume()">&#9654; Resume</button>
-        <button class="bad" onclick="runStop()">&#9632; Stop</button>
+      <div class="flex" style="justify-content:space-between">
+        <h3>Run: <b id="runPath">none selected</b></h3>
+        <div class="flex">
+          <button class="ok" onclick="runGo()">&#9654; Go</button>
+          <button class="ghost" onclick="runPause()">&#10073;&#10073; Pause</button>
+          <button class="ghost" onclick="runResume()">&#9654; Resume</button>
+          <button class="ghost" onclick="runRestart()">&#8635; Restart</button>
+          <button class="bad" onclick="runStop()">&#9632; Stop</button>
+          <button class="ghost" onclick="runCancel()">&#10005; Cancel</button>
+        </div>
       </div>
-      <div class="flex" style="margin-top:10px">
+      <div class="flex" style="margin:8px 0">
         <span class="pill" id="st_state">idle</span>
         <span class="muted" id="st_detail"></span>
       </div>
-      <img id="liveFrame" class="plot" style="max-width:420px; image-rendering:pixelated" />
+      <iframe id="liveView" style="width:100%; height:70vh; border:1px solid var(--line);
+        border-radius:8px; background:#0e1014"></iframe>
+      <div id="liveHint" class="muted" style="margin-top:6px">Press <b>Go</b> to start; the live view appears here.</div>
     </div>
   </section>
 
@@ -166,7 +171,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <section id="tab-graphs" class="hidden">
     <div class="card">
       <h3>Result graphs</h3>
-      <select id="runPick" onchange="showRun()" style="max-width:360px"></select>
+      <div class="flex">
+        <select id="runPick" onchange="showRun()" style="max-width:360px"></select>
+        <button class="ghost" onclick="regenGraphs()">&#8635; Regenerate graphs</button>
+      </div>
       <div id="plots"></div>
     </div>
   </section>
@@ -203,8 +211,11 @@ async function loadConfigs(){
     <td>${c.size?c.size.join('x'):''}</td><td>${c.objective||''}</td>
     <td>${(c.models||[]).map(m=>'<span class=pill>'+m+'</span>').join(' ')}</td>
     <td class="flex"><button class="ghost" onclick='editConfig(${JSON.stringify(c.path)})'>Edit</button>
+      <button class="ghost" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
       <button onclick='selectRun(${JSON.stringify(c.path)})'>Run</button></td></tr>`).join('');
 }
+async function dupConfig(path){const r=await api('/api/config/duplicate','POST',{path});
+  if(r.ok){await loadConfigs(); editConfig(r.path);}else alert('Error: '+r.error);}
 function newConfig(){CFG=defaultConfig();$('savePath').value='configs/'+CFG.experiment.name+'.yaml';
   $('edPath').textContent='new';formFromCfg();go('editor');}
 async function editConfig(path){const r=await api('/api/config?path='+encodeURIComponent(path));
@@ -354,19 +365,28 @@ async function saveConfig(){cfgFromForm();const path=$('savePath').value.trim();
 
 // ---------- Run ----------
 let RUNPATH=null, poll=null;
-function selectRun(path){RUNPATH=path;$('runPath').textContent=path;go('run');}
-async function runStart(){if(!RUNPATH){alert('Pick a config on the Configs tab first');return;}
+function selectRun(path){RUNPATH=path;$('runPath').textContent=path;
+  $('liveView').src='about:blank';$('liveHint').style.display='';go('run');}
+async function runGo(){if(!RUNPATH){alert('Pick a config on the Configs tab first');return;}
   const r=await api('/api/run/start','POST',{path:RUNPATH});
-  if(!r.ok){alert(r.error);return;} startPolling();}
+  if(!r.ok){alert(r.error);return;}
+  if(r.live_url){$('liveView').src=r.live_url;$('liveHint').style.display='none';}
+  startPolling();}
 function runPause(){api('/api/run/pause','POST');}
 function runResume(){api('/api/run/resume','POST');}
 function runStop(){api('/api/run/stop','POST');}
+async function runRestart(){await api('/api/run/stop','POST');
+  // wait for the current run to unwind, then start fresh
+  let tries=0;const wait=setInterval(async()=>{const s=await api('/api/run/status');
+    if(!s.running||++tries>15){clearInterval(wait);runGo();}},600);}
+async function runCancel(){await api('/api/run/stop','POST');
+  if(poll)clearInterval(poll);$('liveView').src='about:blank';go('configs');}
 function startPolling(){if(poll)clearInterval(poll);poll=setInterval(async()=>{
   const s=await api('/api/run/status');
   $('st_state').textContent=s.state||'idle';
   $('st_detail').textContent=s.model?`${s.model} - trial ${s.trial}/${s.num_trials}, turn ${s.turn}/${s.max_turns}`:(s.error||'');
-  $('liveFrame').src='/api/run/frame.png?'+Date.now();
-  if(['finished','stopped','error','idle'].includes(s.state)&&!s.running){/* keep last frame */}
+  if(s.live_url&&$('liveView').src==='about:blank'){$('liveView').src=s.live_url;$('liveHint').style.display='none';}
+  if(['finished','stopped','error'].includes(s.state)&&!s.running){clearInterval(poll);}
 },700);}
 
 // ---------- Graphs ----------
@@ -375,8 +395,14 @@ async function loadRuns(){const r=await api('/api/runs');
     r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
   window._runs=r.runs;}
 function showRun(){const name=$('runPick').value;const run=(window._runs||[]).find(r=>r.name==name);
+  const bust=Date.now();
   $('plots').innerHTML=run?run.plots.map(f=>`<div><div class="muted">${f}</div>
-    <img class="plot" src="/api/plot?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}"></div>`).join(''):'';}
+    <img class="plot" src="/api/plot?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}&_=${bust}"></div>`).join(''):'';}
+async function regenGraphs(){const name=$('runPick').value;
+  if(!name){alert('Pick a run first');return;}
+  const r=await api('/api/analyze','POST',{run:name});
+  if(!r.ok){alert('Error: '+r.error);return;}
+  await loadRuns(); $('runPick').value=name; showRun();}
 
 // ---------- boot ----------
 (async()=>{META=await api('/api/meta');renderPalette();loadConfigs();})();
