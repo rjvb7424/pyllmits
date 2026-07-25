@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -46,14 +47,61 @@ from world import CustomCrafterEnv
 LOG = logging.getLogger("crafter_experiment.run")
 
 
+class StopExperiment(Exception):
+    """Raised internally to unwind the run loop when the user hits Stop."""
+
+
+class RunControl:
+    """Thread-safe play/pause/stop switch the Studio UI drives.
+
+    The runner calls checkpoint() between turns; it blocks while paused and
+    raises StopExperiment when stopped. `status` is a plain dict the UI polls.
+    """
+
+    def __init__(self):
+        self._resume = threading.Event()
+        self._resume.set()          # start un-paused
+        self._stopped = False
+        self.status: dict = {"state": "idle"}
+        self.frame_png: bytes | None = None   # latest rendered frame for the UI
+
+    def pause(self):
+        self._resume.clear()
+        self.status["state"] = "paused"
+
+    def resume(self):
+        self._resume.set()
+        self.status["state"] = "running"
+
+    def stop(self):
+        self._stopped = True
+        self._resume.set()          # unblock any pause so it can exit
+        self.status["state"] = "stopping"
+
+    @property
+    def paused(self) -> bool:
+        return not self._resume.is_set()
+
+    def checkpoint(self):
+        """Block while paused; raise StopExperiment if stopped."""
+        self._resume.wait()
+        if self._stopped:
+            raise StopExperiment()
+
+    def update(self, **kw):
+        self.status.update(kw)
+
+
 class ExperimentRunner:
     """Runs every model over every trial and writes the results."""
 
     def __init__(
         self, cfg: Config, live: bool = False,
         live_port: int = DEFAULT_PORT, open_browser: bool = True,
+        control: "RunControl | None" = None,
     ):
         self.cfg = cfg
+        self.control = control
         self.checker = ObjectiveChecker(cfg.objective)
         self.parser = ActionParser(cfg.actions.strategy, cfg.actions.fallback)
         self.prompt_builder = PromptBuilder(cfg.prompt, self.checker.label)
@@ -77,10 +125,23 @@ class ExperimentRunner:
     # =========================================================================
     def run(self) -> dict:
         self.cfg.run_dir.mkdir(parents=True, exist_ok=True)
-        for spec in self.cfg.models:
-            self._run_model(spec)
+        if self.control:
+            self.control.update(state="running")
+        try:
+            for spec in self.cfg.models:
+                self._run_model(spec)
+        except StopExperiment:
+            LOG.info("Experiment stopped by user. Progress saved.")
+            self._save()
+            if self.control:
+                self.control.update(state="stopped")
+            if self.live:
+                self.live.set_complete()
+            return self.results
         if self.live:
             self.live.set_complete()
+        if self.control:
+            self.control.update(state="finished")
         LOG.info("Done. Results at %s", self.cfg.results_path)
         return self.results
 
@@ -215,7 +276,7 @@ class ExperimentRunner:
 
         system_prompt, _ = self.prompt_builder.build(self.env)
         turns: list[dict] = []
-        need_frames = self.live is not None or video_writer is not None
+        need_frames = self.live is not None or video_writer is not None or self.control is not None
         last_frame = None
         success = False
         success_turn = None
@@ -224,6 +285,16 @@ class ExperimentRunner:
             video_writer.title([spec.name, f"trial {trial + 1}"])
 
         for turn in range(self.cfg.experiment.max_turns):
+            # Pause/stop control point (Studio UI). Blocks while paused, raises
+            # StopExperiment on stop.
+            if self.control is not None:
+                self.control.checkpoint()
+                self.control.update(
+                    state="running", model=spec.name,
+                    trial=trial + 1, num_trials=self.cfg.experiment.num_trials,
+                    turn=turn + 1, max_turns=self.cfg.experiment.max_turns,
+                )
+
             # State the model is about to see.
             _, user_prompt = self.prompt_builder.build(self.env)
             pre_pos = [int(v) for v in self.env.player.pos]
@@ -241,6 +312,8 @@ class ExperimentRunner:
                 if self.live is not None:
                     self.live.set_frame(self._png_bytes(frame_arr))
                     frame_url = "frame.png"
+                if self.control is not None:
+                    self.control.frame_png = self._png_bytes(frame_arr)
 
             # Decision.
             raw_text, think_seconds = model.generate(system_prompt, user_prompt)

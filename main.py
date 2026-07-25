@@ -75,9 +75,19 @@ def main() -> None:
     ap.add_argument("--rebuild-videos", action="store_true",
                     help="regenerate every model's video from results.json (no model "
                          "calls) and exit - fixes videos after a resumed run")
+    ap.add_argument("--studio", action="store_true",
+                    help="open the browser Studio (build configs/worlds, view graphs, "
+                         "run experiments with play/pause) instead of running directly")
+    ap.add_argument("--studio-port", type=int, default=8010, help="Studio UI port")
     args = ap.parse_args()
 
     configure_logging()
+
+    if args.studio:
+        import studio
+        studio.serve(port=args.studio_port)
+        return
+
     load_env()
     cfg = load_config(args.config)
 

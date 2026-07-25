@@ -39,6 +39,9 @@ _FEATURE_MATERIALS = {
     "coal": "coal",
     "iron": "iron",
     "sand": "sand",
+    "table": "table",
+    "furnace": "furnace",
+    "lava": "lava",
 }
 
 _WALKABLE = ("grass", "path", "sand")

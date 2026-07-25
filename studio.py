@@ -1,0 +1,302 @@
+"""
+studio.py
+=========
+
+A local browser "Studio" for the Crafter experiment harness. Instead of running
+an experiment immediately, `python studio.py` (or `python main.py --studio`)
+opens a UI where you can:
+
+  * browse / load / create config files (in configs/)
+  * edit every setting (trials, turns, models, objective, prompt, ...) as a form
+  * build the world by painting tiles on a grid (water, trees, stone, table,
+    player start, zombies, ...)
+  * launch an experiment with Play / Pause / Resume / Stop, and watch it live
+  * view the result graphs for any run
+
+It is a small stdlib http.server (no extra dependencies) that serves a
+single-page app and a JSON API. The experiment runs in a background thread and
+is driven through experiment.RunControl.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import logging
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
+
+import ruamel.yaml
+
+LOG = logging.getLogger("crafter_experiment.studio")
+
+ROOT = Path.cwd()
+CONFIGS_DIR = ROOT / "configs"
+RUNS_DIR = ROOT / "runs"
+
+# Palette: what you can paint on the world grid. Each maps to a world-config
+# feature/entity key (or the base terrain / player start). "kind" tells the
+# frontend how to serialize it. Colours are for the grid UI.
+PALETTE = [
+    {"id": "grass",    "label": "Grass",    "kind": "base",   "color": "#4a9d4a"},
+    {"id": "water",    "label": "Water",    "kind": "feature", "key": "water",   "color": "#3b74c4"},
+    {"id": "trees",    "label": "Tree",     "kind": "feature", "key": "trees",   "color": "#1f6b2e"},
+    {"id": "stone",    "label": "Stone",    "kind": "feature", "key": "stone",   "color": "#8a8a8a"},
+    {"id": "coal",     "label": "Coal",     "kind": "feature", "key": "coal",    "color": "#2b2b2b"},
+    {"id": "iron",     "label": "Iron",     "kind": "feature", "key": "iron",    "color": "#b98a5a"},
+    {"id": "sand",     "label": "Sand",     "kind": "feature", "key": "sand",    "color": "#d9c98a"},
+    {"id": "lava",     "label": "Lava",     "kind": "feature", "key": "lava",    "color": "#d1502a"},
+    {"id": "table",    "label": "Table",    "kind": "feature", "key": "table",   "color": "#7a4a1e"},
+    {"id": "furnace",  "label": "Furnace",  "kind": "feature", "key": "furnace", "color": "#555555"},
+    {"id": "player",   "label": "Player",   "kind": "player",  "color": "#f2d94e"},
+    {"id": "cow",      "label": "Cow",      "kind": "entity",  "key": "cow",     "color": "#e8c0a0"},
+    {"id": "zombie",   "label": "Zombie",   "kind": "entity",  "key": "zombie",  "color": "#6db56d"},
+    {"id": "skeleton", "label": "Skeleton", "kind": "entity",  "key": "skeleton","color": "#e0e0e0"},
+]
+
+OBJECTIVE_TARGETS = [
+    "collect_wood", "collect_stone", "collect_coal", "collect_iron",
+    "collect_diamond", "place_table", "make_wood_pickaxe", "make_stone_pickaxe",
+    "eat_cow", "collect_drink", "defeat_zombie",
+]
+BACKENDS = ["openai", "huggingface-api", "huggingface", "gemini", "mock"]
+
+
+# =============================================================================
+#  YAML helpers
+# =============================================================================
+def _yaml():
+    y = ruamel.yaml.YAML()
+    y.default_flow_style = False
+    y.width = 4096
+    return y
+
+
+def load_yaml(path: Path) -> dict:
+    y = ruamel.yaml.YAML(typ="safe", pure=True)
+    return y.load(path.read_text()) or {}
+
+
+def dump_yaml(data: dict) -> str:
+    buf = io.StringIO()
+    _yaml().dump(data, buf)
+    return buf.getvalue()
+
+
+# =============================================================================
+#  Server state (a single active run at a time)
+# =============================================================================
+class Studio:
+    def __init__(self):
+        self.control = None      # experiment.RunControl while running
+        self.thread = None
+        self.config_path = None
+
+    def is_running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def start_run(self, config_path: str) -> dict:
+        if self.is_running():
+            return {"ok": False, "error": "A run is already in progress."}
+        from config import load_config
+        from experiment import ExperimentRunner, RunControl
+
+        cfg = load_config(config_path)
+        self.control = RunControl()
+        self.config_path = config_path
+
+        def _worker():
+            try:
+                runner = ExperimentRunner(cfg, live=False, control=self.control)
+                runner.run()
+            except Exception as exc:  # surface errors to the UI
+                LOG.exception("run failed")
+                self.control.update(state="error", error=str(exc))
+
+        self.thread = threading.Thread(target=_worker, daemon=True)
+        self.control.update(state="running")
+        self.thread.start()
+        return {"ok": True}
+
+    def status(self) -> dict:
+        if self.control is None:
+            return {"state": "idle"}
+        s = dict(self.control.status)
+        s["running"] = self.is_running()
+        return s
+
+
+STUDIO = Studio()
+
+
+# =============================================================================
+#  HTTP handler
+# =============================================================================
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):  # quiet
+        pass
+
+    # -- helpers --------------------------------------------------------------
+    def _send(self, code, body, ctype="application/json"):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body).encode()
+        elif isinstance(body, str):
+            body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length", 0))
+        if not n:
+            return {}
+        return json.loads(self.rfile.read(n) or b"{}")
+
+    # -- GET ------------------------------------------------------------------
+    def do_GET(self):
+        u = urlparse(self.path)
+        q = parse_qs(u.query)
+        p = u.path
+        try:
+            if p == "/" or p == "/index.html":
+                return self._send(200, INDEX_HTML, "text/html")
+            if p == "/api/meta":
+                return self._send(200, {
+                    "palette": PALETTE, "objectives": OBJECTIVE_TARGETS,
+                    "backends": BACKENDS,
+                })
+            if p == "/api/configs":
+                return self._send(200, {"configs": self._list_configs()})
+            if p == "/api/config":
+                path = Path(q["path"][0])
+                return self._send(200, {"data": load_yaml(path), "path": str(path)})
+            if p == "/api/runs":
+                return self._send(200, {"runs": self._list_runs()})
+            if p == "/api/plot":
+                fp = RUNS_DIR / q["run"][0] / "plots" / q["file"][0]
+                if fp.exists():
+                    return self._send(200, fp.read_bytes(), "image/png")
+                return self._send(404, {"error": "not found"})
+            if p == "/api/run/status":
+                return self._send(200, STUDIO.status())
+            if p == "/api/run/frame.png":
+                png = STUDIO.control.frame_png if STUDIO.control else None
+                if png:
+                    return self._send(200, png, "image/png")
+                return self._send(404, b"", "image/png")
+            return self._send(404, {"error": "unknown route"})
+        except Exception as exc:
+            LOG.exception("GET %s failed", p)
+            return self._send(500, {"error": str(exc)})
+
+    # -- POST -----------------------------------------------------------------
+    def do_POST(self):
+        p = urlparse(self.path).path
+        try:
+            if p == "/api/config/save":
+                b = self._body()
+                path = Path(b["path"])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(dump_yaml(b["data"]))
+                return self._send(200, {"ok": True, "path": str(path)})
+            if p == "/api/preview":
+                return self._send(200, self._preview(self._body().get("world", {})))
+            if p == "/api/run/start":
+                return self._send(200, STUDIO.start_run(self._body()["path"]))
+            if p == "/api/run/pause":
+                if STUDIO.control: STUDIO.control.pause()
+                return self._send(200, {"ok": True})
+            if p == "/api/run/resume":
+                if STUDIO.control: STUDIO.control.resume()
+                return self._send(200, {"ok": True})
+            if p == "/api/run/stop":
+                if STUDIO.control: STUDIO.control.stop()
+                return self._send(200, {"ok": True})
+            return self._send(404, {"error": "unknown route"})
+        except Exception as exc:
+            LOG.exception("POST %s failed", p)
+            return self._send(500, {"error": str(exc)})
+
+    # -- data helpers ---------------------------------------------------------
+    def _list_configs(self):
+        out = []
+        for d in (CONFIGS_DIR, ROOT):
+            if not d.exists():
+                continue
+            for f in sorted(d.glob("*.yaml")):
+                try:
+                    data = load_yaml(f)
+                    exp = data.get("experiment", {})
+                    out.append({
+                        "path": str(f),
+                        "name": exp.get("name", f.stem),
+                        "trials": exp.get("num_trials"),
+                        "turns": exp.get("max_turns"),
+                        "size": data.get("world", {}).get("size"),
+                        "objective": data.get("objective", {}).get("target"),
+                        "models": [m.get("name") for m in data.get("models", [])],
+                    })
+                except Exception:
+                    out.append({"path": str(f), "name": f.stem, "error": True})
+        return out
+
+    def _list_runs(self):
+        out = []
+        if RUNS_DIR.exists():
+            for d in sorted(RUNS_DIR.iterdir()):
+                plots = d / "plots"
+                if plots.exists():
+                    files = [f.name for f in sorted(plots.glob("*.png"))]
+                    out.append({"name": d.name, "plots": files})
+        return out
+
+    def _preview(self, world: dict):
+        """Render the world to an ASCII map via the real engine for accuracy."""
+        try:
+            from config import WorldCfg
+            from world import CustomCrafterEnv
+            import observation as obs
+            wc = WorldCfg.from_dict(world)
+            env = CustomCrafterEnv(wc, seed=0)
+            env.set_world_seed(0)
+            env.reset()
+            return {"ok": True, "map": obs.render_text_map(env.world, env.player),
+                    "size": list(wc.size)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+
+# =============================================================================
+#  Entry point
+# =============================================================================
+def serve(port: int = 8010, open_browser: bool = True):
+    CONFIGS_DIR.mkdir(exist_ok=True)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    url = f"http://127.0.0.1:{port}"
+    print("=" * 60)
+    print(f"  Crafter Studio: {url}")
+    print("=" * 60)
+    if open_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStudio stopped.")
+
+
+# The single-page app (HTML/CSS/JS) is defined in studio_ui.py to keep this file
+# focused on the server. It's imported lazily so a syntax error there can't stop
+# the server from importing.
+from studio_ui import INDEX_HTML  # noqa: E402
+
+
+if __name__ == "__main__":
+    import logging as _l
+    _l.basicConfig(level=_l.INFO, format="%(asctime)s  %(levelname)s  %(message)s",
+                   datefmt="%H:%M:%S")
+    serve()
