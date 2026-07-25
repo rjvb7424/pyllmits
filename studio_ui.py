@@ -27,7 +27,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     /* config table columns: Name | Size | Objective | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(180px,1.6fr) 84px 150px 66px 66px minmax(180px,2fr) 250px;
+    --cfg-cols:minmax(170px,1.4fr) 76px 190px 66px 66px minmax(220px,2fr) 250px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -58,7 +58,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .statusdot.paused i{background:var(--accent)}
   .statusdot.err i{background:var(--danger)}
 
-  main{padding:var(--s6);max-width:1180px;margin:0 auto}
+  main{padding:var(--s6);max-width:1360px;margin:0 auto}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
     padding:var(--s6);margin-bottom:var(--s4)}
@@ -101,17 +101,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   /* exec-style table: header + rows share the same fixed column tracks */
   .cfg-table{display:flex;flex-direction:column;gap:var(--s2)}
-  .cfg-head,.cfg{display:grid;grid-template-columns:var(--cfg-cols);gap:var(--s3);
-    align-items:center;padding:var(--s3) var(--s4);border:1px solid transparent}
+  .cfg-head,.cfg{display:grid;grid-template-columns:var(--cfg-cols);gap:var(--s4);
+    padding:var(--s3) var(--s4);border:1px solid transparent}
+  .cfg-head>*,.cfg>*{min-width:0}                    /* keep columns from bleeding */
   .cfg-head{color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;
-    letter-spacing:.05em;padding-top:0;padding-bottom:var(--s1)}
-  .cfg{background:var(--surface);border-color:var(--line);border-radius:var(--radius-lg)}
+    letter-spacing:.05em;padding-top:0;padding-bottom:var(--s1);align-items:center}
+  .cfg{background:var(--surface);border-color:var(--line);border-radius:var(--radius-lg);
+    min-height:92px;align-items:center}                /* ~3 lines tall, content vertically centered */
   .cfg:hover{border-color:var(--line2)}
-  .cfg .name{font-weight:600;font-size:15px;overflow-wrap:anywhere}
+  .cfg .name{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
   .cfg .cell{color:var(--text);font-family:var(--mono);font-size:13px}
-  .cfg .models{color:var(--muted);font-size:12.5px;font-family:var(--mono);overflow-wrap:anywhere;line-height:1.35}
-  .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-end}
-  .cfg-head .r,.cfg .actions{text-align:right}
+  .cfg .obj .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:center;overflow:hidden;
+    max-height:72px;                                  /* about 3 rows of pills, then fade */
+    -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent);
+    mask-image:linear-gradient(to bottom,#000 78%,transparent)}
+  .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-start;align-items:center}
 
   .empty{text-align:center;color:var(--muted);padding:var(--s12) var(--s4);border:1px dashed var(--line2);border-radius:var(--radius-lg)}
   .empty b{color:var(--text);display:block;margin-bottom:var(--s2);font-size:16px}
@@ -149,7 +155,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   @media (max-width:820px){
     .cfg-head{display:none}
-    .cfg{grid-template-columns:1fr;gap:var(--s2)}
+    .cfg{grid-template-columns:1fr;gap:var(--s2);min-height:0;align-items:stretch;padding:var(--s3) var(--s4)}
+    .cfg .models{-webkit-mask-image:none;mask-image:none;max-height:none;flex-wrap:wrap}
+    .cfg .name{-webkit-line-clamp:2}
     .cfg .actions{justify-content:flex-start}
     .cfg .actions .btn-primary{flex:1}
   }
@@ -172,7 +180,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <!-- CONFIGS -->
   <section id="tab-configs">
     <div class="between" style="margin-bottom:var(--s4)">
-      <div><h2>Configs</h2><div class="sub">Pick an experiment to run, or build a new world.</div></div>
+      <h2>Configs</h2>
       <button class="btn-primary" onclick="newConfig()">+ New config</button>
     </div>
     <div class="cfg-table" id="cfgRows"></div>
@@ -325,18 +333,18 @@ async function loadConfigs(){
   if(!r.configs||!r.configs.length){el.innerHTML='<div class="empty"><b>No configs yet</b>Create one with + New config, then paint a world.</div>';return;}
   el.innerHTML=`<div class="cfg-head">
       <div>Name</div><div>Size</div><div>Objective</div><div>Trials</div><div>Turns</div>
-      <div>Models</div><div class="r">Actions</div>
+      <div>Models</div><div>Actions</div>
     </div>`+r.configs.map(c=>`<div class="cfg">
     <div class="name">${c.name||'(unnamed)'}</div>
     <div class="cell">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
-    <div>${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
+    <div class="obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
     <div class="cell">${c.trials!=null?c.trials:'\u2014'}</div>
     <div class="cell">${c.turns!=null?c.turns:'\u2014'}</div>
-    <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).join(', ')||'\u2014'}</div>
+    <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).map(m=>`<span class="pill">${m}</span>`).join('')||'<span class="muted">\u2014</span>'}</div>
     <div class="actions">
-      <button class="btn-primary btn-sm" onclick='selectRun(${JSON.stringify(c.path)})'>&#9654; Run</button>
+      <button class="btn-secondary btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
       <button class="btn-secondary btn-sm" onclick='editConfig(${JSON.stringify(c.path)})'>Edit</button>
-      <button class="btn-ghost btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
+      <button class="btn-primary btn-sm" onclick='selectRun(${JSON.stringify(c.path)})'>&#9654; Run</button>
     </div></div>`).join('');
 }
 function newConfig(){CFG=defaultConfig();$('savePath').value='configs/'+CFG.experiment.name+'.yaml';
