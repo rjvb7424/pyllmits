@@ -264,7 +264,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <section id="tab-run" class="hidden">
     <div class="card">
       <div class="between">
-        <div><h2>Run</h2><div class="sub"><span class="pill" id="runPath">none selected</span></div></div>
+        <div><h2>Run</h2>
+          <div class="flex" style="margin-top:var(--s2)">
+            <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="min-width:300px" aria-label="Config to run"></select>
+          </div>
+        </div>
         <div class="flex">
           <button class="btn-primary" onclick="runGo()">&#9654;&nbsp;Go</button>
           <button class="btn-secondary" onclick="runPause()">&#10073;&#10073;&nbsp;Pause</button>
@@ -311,7 +315,7 @@ function setStatus(state){const d=$('statusDot');d.className='statusdot'+
 
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
   ['configs','editor','run','graphs'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
-  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns();}
+  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='run')loadRunConfigs();}
 document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>go(x.dataset.tab));
 
 function defaultConfig(){return {
@@ -499,9 +503,16 @@ async function saveConfig(){cfgFromForm();const path=$('savePath').value.trim();
 
 // ---------- Run ----------
 let RUNPATH=null, poll=null;
-function selectRun(path){RUNPATH=path;$('runPath').textContent=path;
-  $('liveView').src='about:blank';$('liveHint').style.display='';go('run');}
-async function runGo(){if(!RUNPATH){toast('Pick a config on the Configs tab first','err');return;}
+async function loadRunConfigs(){const r=await api('/api/configs');
+  const sel=$('runConfigPick');
+  sel.innerHTML='<option value="">-- select a config --</option>'+
+    (r.configs||[]).map(c=>`<option value="${c.path}" ${c.path==RUNPATH?'selected':''}>${c.name||c.path}</option>`).join('');
+}
+function pickRunConfig(path){RUNPATH=path||null;
+  $('liveView').src='about:blank';$('liveHint').style.display='';}
+function selectRun(path){RUNPATH=path;go('run');
+  $('liveView').src='about:blank';$('liveHint').style.display='';}
+async function runGo(){if(!RUNPATH){toast('Pick a config to run first','err');return;}
   setStatus('running');const r=await api('/api/run/start','POST',{path:RUNPATH});
   if(!r.ok){toast(r.error,'err');setStatus('error');return;}
   if(r.live_url){$('liveView').src=r.live_url;$('liveHint').style.display='none';}

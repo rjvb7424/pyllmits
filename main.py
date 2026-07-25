@@ -82,6 +82,7 @@ def main() -> None:
     args = ap.parse_args()
 
     configure_logging()
+    load_env()  # load .env (API keys) up front - the Studio runs experiments too
 
     # The Studio UI is the default entry point. Direct CLI runs need --run
     # (or --rebuild-videos, which operates on an existing run).
@@ -90,7 +91,6 @@ def main() -> None:
         studio.serve(port=args.studio_port)
         return
 
-    load_env()
     cfg = load_config(args.config)
 
     if args.rebuild_videos:
