@@ -351,10 +351,11 @@ class Handler(BaseHTTPRequestHandler):
         out = []
         if RUNS_DIR.exists():
             for d in sorted(RUNS_DIR.iterdir()):
+                if not (d / "results.json").exists():
+                    continue
                 plots = d / "plots"
-                if plots.exists():
-                    files = [f.name for f in sorted(plots.glob("*.png"))]
-                    out.append({"name": d.name, "plots": files})
+                files = [f.name for f in sorted(plots.glob("*.png"))] if plots.exists() else []
+                out.append({"name": d.name, "plots": files})
         return out
 
     def _preview(self, world: dict):
