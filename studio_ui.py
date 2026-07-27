@@ -27,7 +27,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     /* config table columns: Name | Size | Objective | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(170px,1.4fr) 76px 190px 66px 66px minmax(220px,2fr) 250px;
+    --cfg-cols:minmax(170px,1.4fr) 76px 190px 66px 66px minmax(220px,2fr) 310px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -117,7 +117,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     max-height:72px;                                  /* about 3 rows of pills, then fade */
     -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent);
     mask-image:linear-gradient(to bottom,#000 78%,transparent)}
-  .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-start;align-items:center}
+  .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-start;align-items:center;flex-wrap:wrap}
 
   .empty{text-align:center;color:var(--muted);padding:var(--s12) var(--s4);border:1px dashed var(--line2);border-radius:var(--radius-lg)}
   .empty b{color:var(--text);display:block;margin-bottom:var(--s2);font-size:16px}
@@ -193,6 +193,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="flex">
         <input id="savePath" style="width:300px" placeholder="configs/my_world.yaml" aria-label="Save path"/>
         <button class="btn-secondary" onclick="go('configs')">Cancel</button>
+        <button class="btn-danger hidden" id="edDelete" onclick="deleteCurrentConfig()">Delete</button>
         <button class="btn-primary" onclick="saveConfig()">Save config</button>
       </div>
     </div>
@@ -348,15 +349,25 @@ async function loadConfigs(){
     <div class="actions">
       <button class="btn-secondary btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
       <button class="btn-secondary btn-sm" onclick='editConfig(${JSON.stringify(c.path)})'>Edit</button>
+      <button class="btn-danger btn-sm" onclick='delConfigRow(${JSON.stringify(c.path)})'>Delete</button>
       <button class="btn-primary btn-sm" onclick='selectRun(${JSON.stringify(c.path)})'>&#9654; Run</button>
     </div></div>`).join('');
 }
-function newConfig(){CFG=defaultConfig();$('savePath').value='configs/'+CFG.experiment.name+'.yaml';
-  $('edPath').textContent='new';formFromCfg();go('editor');}
+let EDPATH=null;
+function newConfig(){CFG=defaultConfig();EDPATH=null;$('savePath').value='configs/'+CFG.experiment.name+'.yaml';
+  $('edPath').textContent='new';$('edDelete').classList.add('hidden');formFromCfg();go('editor');}
 async function editConfig(path){const r=await api('/api/config?path='+encodeURIComponent(path));
-  CFG=r.data;$('savePath').value=path;$('edPath').textContent=path;formFromCfg();go('editor');}
+  CFG=r.data;EDPATH=path;$('savePath').value=path;$('edPath').textContent=path;
+  $('edDelete').classList.remove('hidden');formFromCfg();go('editor');}
 async function dupConfig(path){const r=await api('/api/config/duplicate','POST',{path});
   if(r.ok){toast('Duplicated to '+r.path,'ok');await loadConfigs();editConfig(r.path);}else toast('Error: '+r.error,'err');}
+async function deleteConfigPath(path){const r=await api('/api/config/delete','POST',{path});
+  if(r.ok){toast('Deleted '+r.path,'ok');return true;}toast('Error: '+r.error,'err');return false;}
+async function delConfigRow(path){if(!confirm('Delete '+path+'? This cannot be undone.'))return;
+  if(await deleteConfigPath(path))await loadConfigs();}
+async function deleteCurrentConfig(){if(!EDPATH){toast('Nothing to delete — this config isn’t saved yet','err');return;}
+  if(!confirm('Delete '+EDPATH+'? This cannot be undone.'))return;
+  if(await deleteConfigPath(EDPATH))go('configs');}
 
 // ---------- Editor form <-> CFG ----------
 function formFromCfg(){const c=CFG;

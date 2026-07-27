@@ -235,6 +235,16 @@ class Handler(BaseHTTPRequestHandler):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(dump_yaml(b["data"]))
                 return self._send(200, {"ok": True, "path": str(path)})
+            if p == "/api/config/delete":
+                b = self._body()
+                path = Path(b["path"]).resolve()
+                allowed_dirs = {CONFIGS_DIR.resolve(), ROOT.resolve()}
+                if path.suffix != ".yaml" or path.parent not in allowed_dirs:
+                    return self._send(400, {"ok": False, "error": "refusing to delete outside configs/"})
+                if not path.exists():
+                    return self._send(404, {"ok": False, "error": "not found"})
+                path.unlink()
+                return self._send(200, {"ok": True, "path": str(path)})
             if p == "/api/config/duplicate":
                 b = self._body()
                 src = Path(b["path"])
