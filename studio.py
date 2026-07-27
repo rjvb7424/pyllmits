@@ -298,6 +298,32 @@ class Handler(BaseHTTPRequestHandler):
         ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
         return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
 
+    def _trials_done(self, exp: dict) -> int:
+        """How many trials of this experiment already have results, per results.json.
+
+        A model's trial count only increments once that trial's result is
+        appended (see experiment.py), so a model with fewer recorded trials
+        than the others is still mid-run; use the minimum across models as
+        the experiment's overall completed-trial count.
+        """
+        name = exp.get("name")
+        if not name:
+            return 0
+        output_dir = Path(exp.get("output_dir", "runs"))
+        if not output_dir.is_absolute():
+            output_dir = ROOT / output_dir
+        results_path = output_dir / name / "results.json"
+        if not results_path.exists():
+            return 0
+        try:
+            results = json.loads(results_path.read_text())
+        except Exception:
+            return 0
+        models = results.get("models", {})
+        if not models:
+            return 0
+        return min(len(m.get("trials", [])) for m in models.values())
+
     def _list_configs(self):
         out = []
         for d in (CONFIGS_DIR, ROOT):
@@ -311,6 +337,7 @@ class Handler(BaseHTTPRequestHandler):
                         "path": str(f),
                         "name": exp.get("name", f.stem),
                         "trials": exp.get("num_trials"),
+                        "trials_done": self._trials_done(exp),
                         "turns": exp.get("max_turns"),
                         "size": data.get("world", {}).get("size"),
                         "objective": data.get("objective", {}).get("target"),

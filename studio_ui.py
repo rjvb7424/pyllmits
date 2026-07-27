@@ -343,14 +343,14 @@ async function loadConfigs(){
     <div class="name">${c.name||'(unnamed)'}</div>
     <div class="cell">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
     <div class="obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
-    <div class="cell">${c.trials!=null?c.trials:'\u2014'}</div>
+    <div class="cell">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
     <div class="cell">${c.turns!=null?c.turns:'\u2014'}</div>
     <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).map(m=>`<span class="pill">${m}</span>`).join('')||'<span class="muted">\u2014</span>'}</div>
     <div class="actions">
       <button class="btn-secondary btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
       <button class="btn-secondary btn-sm" onclick='editConfig(${JSON.stringify(c.path)})'>Edit</button>
-      <button class="btn-danger btn-sm" onclick='delConfigRow(${JSON.stringify(c.path)})'>Delete</button>
       <button class="btn-primary btn-sm" onclick='selectRun(${JSON.stringify(c.path)})'>&#9654; Run</button>
+      <button class="btn-danger btn-sm" onclick='delConfigRow(${JSON.stringify(c.path)})'>Delete</button>
     </div></div>`).join('');
 }
 let EDPATH=null;
