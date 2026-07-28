@@ -27,7 +27,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     /* config table columns: Name | Size | Objective | Status | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(130px,1fr) 70px 150px 90px 60px 60px minmax(220px,1.4fr) 300px;
+    --cfg-cols:minmax(130px,1fr) 70px 120px 96px 60px 60px minmax(220px,1.4fr) 300px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -395,7 +395,7 @@ async function loadConfigs(){
     </div>`+r.configs.map(c=>`<div class="cfg">
     <div class="name">${c.name||'(unnamed)'}</div>
     <div class="field">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
-    <div class="field obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
+    <div class="field obj">${c.objective?`<span class="pill accent" title="${c.objective}">${c.objective}</span>`:'\u2014'}</div>
     <div class="field">${configStatus(c)}</div>
     <div class="field">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
     <div class="field">${c.turns!=null?c.turns:'\u2014'}</div>
