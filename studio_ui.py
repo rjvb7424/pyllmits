@@ -26,8 +26,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --radius:6px; --radius-lg:10px; --shadow:0 1px 2px rgba(0,0,0,.4);
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    /* config table columns: Name | Size | Objective | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(170px,1.4fr) 76px 190px 66px 66px minmax(220px,2fr) 310px;
+    /* config table columns: Name | Status | Size | Objective | Trials | Turns | Models | Actions */
+    --cfg-cols:minmax(150px,1.2fr) 84px 70px 190px 66px 66px minmax(200px,2fr) 310px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -94,9 +94,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .pill{display:inline-flex;align-items:center;gap:6px;background:var(--raised);border:1px solid var(--line);
     border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);font-family:var(--mono)}
   .pill.accent{color:var(--accent);border-color:rgba(232,134,60,.35)}
+  .pill.ok{color:var(--ok);border-color:rgba(63,178,127,.35)}
+  .pill.danger{color:var(--danger);border-color:rgba(224,86,86,.35)}
 
   /* exec-style table: header + rows share the same fixed column tracks */
-  .cfg-table{display:flex;flex-direction:column;gap:var(--s2)}
+  .cfg-table{display:flex;flex-direction:column;gap:var(--s2);overflow-x:auto}
   .cfg-head,.cfg{display:grid;grid-template-columns:var(--cfg-cols);gap:var(--s4);
     padding:var(--s3) var(--s4);border:1px solid transparent}
   .cfg-head>*,.cfg>*{min-width:0}                    /* keep columns from bleeding */
@@ -337,15 +339,22 @@ function defaultConfig(){return {
   models:[{name:'gpt-4o-mini',backend:'openai',history_turns:8}]};}
 
 // ---------- Configs list ----------
+function configStatus(c){
+  if(c.error)return '<span class="pill">error</span>';
+  if(c.trials==null)return '<span class="pill">—</span>';
+  const done=c.trials_done??0;
+  return done>=c.trials?'<span class="pill ok">Completed</span>':'<span class="pill danger">Incomplete</span>';
+}
 async function loadConfigs(){
   const el=$('cfgRows'); el.innerHTML='<div class="empty muted">Loading configs&hellip;</div>';
   const r=await api('/api/configs');
   if(!r.configs||!r.configs.length){el.innerHTML='<div class="empty"><b>No configs yet</b>Create one with + New config, then paint a world.</div>';return;}
   el.innerHTML=`<div class="cfg-head">
-      <div>Name</div><div>Size</div><div>Objective</div><div>Trials</div><div>Turns</div>
+      <div>Name</div><div>Status</div><div>Size</div><div>Objective</div><div>Trials</div><div>Turns</div>
       <div>Models</div><div>Actions</div>
     </div>`+r.configs.map(c=>`<div class="cfg">
     <div class="name">${c.name||'(unnamed)'}</div>
+    <div class="cell">${configStatus(c)}</div>
     <div class="cell">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
     <div class="obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
     <div class="cell">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
@@ -364,7 +373,8 @@ function newConfig(){CFG=defaultConfig();EDPATH=null;
 async function editConfig(path){const r=await api('/api/config?path='+encodeURIComponent(path));
   CFG=r.data;EDPATH=path;$('edPath').textContent=path;
   $('edDelete').classList.remove('hidden');formFromCfg();go('editor');}
-async function dupConfig(path){const r=await api('/api/config/duplicate','POST',{path});
+async function dupConfig(path){if(!confirm('Duplicate '+path+'?'))return;
+  const r=await api('/api/config/duplicate','POST',{path});
   if(r.ok){toast('Duplicated to '+r.path,'ok');await loadConfigs();editConfig(r.path);}else toast('Error: '+r.error,'err');}
 async function deleteConfigPath(path){const r=await api('/api/config/delete','POST',{path});
   if(r.ok){toast(r.deleted_run_dir?'Deleted '+r.path+' and its run data':'Deleted '+r.path,'ok');return true;}
