@@ -44,8 +44,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .hidden{display:none!important}
   ::selection{background:var(--accent);color:var(--on-accent)}
 
-  header{flex-shrink:0;z-index:20;display:flex;align-items:center;gap:var(--s4);
+  header{flex-shrink:0;z-index:20;display:flex;align-items:center;flex-wrap:wrap;gap:var(--s4);
     padding:var(--s3) var(--s6);background:var(--surface);border-bottom:1px solid var(--line)}
+  /* Header status - an interactive dot plus its state/detail text, so the
+     run's status reads at a glance from anywhere in the app without needing
+     to hover (title attr still holds the full text as a tooltip backup;
+     click jumps to Run). */
+  #hdrStatus{flex-shrink:0;appearance:none;border:1px solid var(--line);background:var(--raised);
+    padding:5px 12px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:8px}
+  #hdrStatus:hover{border-color:var(--line2);background:#242a34}
+  #hdrStatus .status-label{font:600 12px var(--mono);color:var(--text);text-transform:capitalize;white-space:nowrap}
+  #hdrStatus .status-detail{font:12px var(--mono);color:var(--muted);white-space:nowrap}
+  .status-dot{width:9px;height:9px;border-radius:50%;display:block;flex-shrink:0;background:var(--faint)}
+  .status-dot.running{background:var(--ok);animation:statusPulse 1.4s infinite;--pulse-rgb:63,178,127}
+  .status-dot.paused{background:var(--accent)}
+  .status-dot.finished{background:var(--ok)}
+  .status-dot.stopped{background:var(--danger);animation:statusPulse 1.4s infinite;--pulse-rgb:224,86,86}
+  .status-dot.cancelled{background:var(--danger)}
+  .status-dot.error{background:var(--danger);animation:statusPulse 1.4s infinite;--pulse-rgb:224,86,86}
+  @keyframes statusPulse{
+    0%{box-shadow:0 0 0 0 rgba(var(--pulse-rgb),.55)}
+    70%{box-shadow:0 0 0 8px rgba(var(--pulse-rgb),0)}
+    100%{box-shadow:0 0 0 0 rgba(var(--pulse-rgb),0)}
+  }
   .brand{display:flex;align-items:center;gap:var(--s2);font-weight:700;font-size:16px;letter-spacing:-.02em}
   .brand .mark{width:20px;height:20px;border-radius:5px;
     background:linear-gradient(150deg,var(--accent),#b8531e);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
@@ -176,7 +197,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   .model{background:var(--raised);border:1px solid var(--line);border-radius:var(--radius-lg);padding:var(--s4);margin-bottom:var(--s3)}
 
-  #liveView{width:100%;height:70vh;border:1px solid var(--line);border-radius:var(--radius);background:#0b0d11}
+  /* Run tab live view - always rendered (with placeholder values) rather than
+     only appearing once a run starts, so the tab shows the real layout, not
+     an empty state that implies a page is loading. */
+  .live-grid{display:grid;grid-template-columns:minmax(280px,420px) 1fr;gap:var(--s4)}
+  .live-frame{background:#0b0d11;border:1px solid var(--line);border-radius:var(--radius);
+    min-height:280px;display:flex;align-items:center;justify-content:center;padding:var(--s3);margin-bottom:var(--s3)}
+  .live-frame img{image-rendering:pixelated;width:100%;max-width:380px;border-radius:4px;display:block}
+  .live-chips{display:flex;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s3)}
+  .chip{background:var(--raised);border:1px solid var(--line);border-radius:var(--radius);
+    padding:var(--s2) var(--s3);flex:1;min-width:92px}
+  .chip .k{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em}
+  .chip .v{font-family:var(--mono);font-size:15px;margin-top:3px;color:var(--text)}
+  .chip .v.accent{color:var(--accent)}
+  .chip .v.bad{color:var(--danger)}
+  #lvState,#lvResponse,#lvPrompt{white-space:pre-wrap;word-break:break-word;max-height:40vh}
+  @media (max-width:900px){.live-grid{grid-template-columns:1fr}}
 
   .plot{max-width:100%;border:1px solid var(--line);border-radius:var(--radius);margin:var(--s2) 0;background:#fff;display:block}
   #plots>div{margin-bottom:var(--s4)}
@@ -212,6 +248,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab" data-tab="graphs" role="tab">Graphs</button>
     <button class="tab" data-tab="videos" role="tab">Videos</button>
   </nav>
+  <div style="flex:1"></div>
+  <button id="hdrStatus" onclick="go('run')" title="idle" aria-label="Run status - idle">
+    <span class="status-dot idle" id="statusDot"></span>
+    <span class="status-label" id="statusLabel">idle</span>
+    <span class="status-detail" id="statusDetail"></span>
+  </button>
 </header>
 
 <main>
@@ -295,29 +337,37 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   <!-- RUN -->
   <section id="tab-run" class="hidden">
-    <div class="card">
-      <div class="between">
-        <div><h2>Run</h2>
-          <div class="flex" style="margin-top:var(--s2)">
-            <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="width:300px;text-overflow:ellipsis" aria-label="Config to run"></select>
-          </div>
-        </div>
-        <div class="flex">
-          <button class="btn-primary" onclick="runGo()">&#9654;&nbsp;Go</button>
-          <button class="btn-secondary" onclick="runPause()">&#10073;&#10073;&nbsp;Pause</button>
-          <button class="btn-secondary" onclick="runResume()">&#9654;&nbsp;Resume</button>
-          <button class="btn-secondary" onclick="runRestart()">&#8635;&nbsp;Restart</button>
-          <button class="btn-danger" onclick="runStop()">&#9632;&nbsp;Stop</button>
-          <button class="btn-ghost" onclick="runCancel()">Cancel</button>
-        </div>
+    <div class="between" style="margin-bottom:var(--s4)">
+      <div><h2>Run</h2><div class="sub">Launch a config and watch it live.</div></div>
+      <div class="flex">
+        <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="width:260px;text-overflow:ellipsis" aria-label="Config to run"></select>
+        <button class="btn-primary" onclick="runGo()">&#9654;&nbsp;Go</button>
+        <button class="btn-secondary" onclick="runPause()">&#10073;&#10073;&nbsp;Pause</button>
+        <button class="btn-secondary" onclick="runResume()">&#9654;&nbsp;Resume</button>
+        <button class="btn-secondary" onclick="runRestart()">&#8635;&nbsp;Restart</button>
+        <button class="btn-danger" onclick="runStop()">&#9632;&nbsp;Stop</button>
+        <button class="btn-ghost" onclick="runCancel()">Cancel</button>
       </div>
-      <div class="flex" style="margin:var(--s3) 0">
-        <span class="pill accent" id="st_state">idle</span>
-        <span class="muted mono" id="st_detail"></span>
+    </div>
+    <div class="live-grid">
+      <div>
+        <div class="live-frame" id="liveFrame"><span class="muted mono" style="font-size:28px">&ndash;</span></div>
+        <div class="live-chips">
+          <div class="chip"><div class="k">Model</div><div class="v" id="lvModel">&ndash;</div></div>
+          <div class="chip"><div class="k">Trial</div><div class="v" id="lvTrial">&ndash;</div></div>
+          <div class="chip"><div class="k">Turn</div><div class="v" id="lvTurn">&ndash;</div></div>
+        </div>
+        <div class="live-chips">
+          <div class="chip"><div class="k">Action</div><div class="v accent" id="lvAction">&ndash;</div></div>
+          <div class="chip"><div class="k">Think time</div><div class="v" id="lvThink">&ndash;</div></div>
+          <div class="chip"><div class="k">Facing</div><div class="v" id="lvFacing">&ndash;</div></div>
+        </div>
+        <div class="card"><h3>Inventory / achievements</h3><pre id="lvState">&ndash;</pre></div>
       </div>
-      <iframe id="liveView" title="Live experiment view"></iframe>
-      <div id="liveHint" class="muted" style="margin-top:var(--s2);font-size:13px">
-        Press <b>Go</b> to start &mdash; the live view appears here.</div>
+      <div>
+        <div class="card"><h3>Model raw response</h3><pre id="lvResponse">&ndash;</pre></div>
+        <div class="card"><h3>Prompt sent this turn</h3><pre id="lvPrompt">&ndash;</pre></div>
+      </div>
     </div>
   </section>
 
@@ -634,21 +684,25 @@ async function saveConfig(){cfgFromForm();const name=(CFG.experiment.name||'').t
   else toast('Error: '+r.error,'err');}
 
 // ---------- Run ----------
-let RUNPATH=null, poll=null;
+// Status polling runs continuously from boot (not just while the Run tab is
+// open) and drives both the header status dot and the live-view panel below
+// - a run keeps going in the background no matter which tab you're looking
+// at, so status belongs where it's always visible, and the live view is
+// native markup (always rendered, filled with placeholders when idle)
+// instead of an iframe that's blank until a run starts.
+let RUNPATH=null, lastRunState=null, runCancelled=false, lvFrameKey=null;
 async function loadRunConfigs(){const r=await api('/api/configs');
   const sel=$('runConfigPick');
   sel.innerHTML='<option value="">-- select a config --</option>'+
     (r.configs||[]).map(c=>`<option value="${c.path}" ${c.path==RUNPATH?'selected':''}>${c.name||c.path}</option>`).join('');
 }
-function pickRunConfig(path){RUNPATH=path||null;
-  $('liveView').src='about:blank';$('liveHint').style.display='';}
-function selectRun(path){RUNPATH=path;go('run');
-  $('liveView').src='about:blank';$('liveHint').style.display='';}
+function pickRunConfig(path){RUNPATH=path||null;}
+function selectRun(path){RUNPATH=path;go('run');}
 async function runGo(){if(!RUNPATH){toast('Pick a config to run first','err');return;}
   const r=await api('/api/run/start','POST',{path:RUNPATH});
   if(!r.ok){toast(r.error,'err');return;}
-  if(r.live_url){$('liveView').src=r.live_url;$('liveHint').style.display='none';}
-  toast('Experiment started','ok');startPolling();}
+  runCancelled=false;
+  toast('Experiment started','ok');}
 function runPause(){api('/api/run/pause','POST');}
 function runResume(){api('/api/run/resume','POST');}
 function runStop(){api('/api/run/stop','POST');toast('Stopping\u2026');}
@@ -656,16 +710,64 @@ async function runRestart(){await api('/api/run/stop','POST');
   let tries=0;const wait=setInterval(async()=>{const s=await api('/api/run/status');
     if(!s.running||++tries>15){clearInterval(wait);runGo();}},600);}
 async function runCancel(){await api('/api/run/stop','POST');
-  if(poll)clearInterval(poll);$('liveView').src='about:blank';go('configs');}
-function startPolling(){if(poll)clearInterval(poll);poll=setInterval(async()=>{
+  runCancelled=true;go('configs');}
+
+// ---------- Header status dot ----------
+function statusMeta(s){
+  if(runCancelled)return{cls:'cancelled',label:'cancelled'};
+  const st=s.state||'idle';
+  if(['running','paused','stopped','finished','error'].includes(st))return{cls:st,label:st};
+  return{cls:'idle',label:'idle'};
+}
+function updateStatusDot(s){
+  const meta=statusMeta(s);
+  $('statusDot').className='status-dot '+meta.cls;
+  $('statusLabel').textContent=meta.label;
+  const detail=s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
+  $('statusDetail').textContent=detail;
+  const title=meta.label+(detail?(' \u2014 '+detail):'');
+  $('hdrStatus').title=title;$('hdrStatus').setAttribute('aria-label','Run status - '+title);
+}
+
+// ---------- Run tab live view (native, not an iframe) ----------
+function fmtInventory(inv){
+  if(!inv||!Object.keys(inv).length)return'(empty)';
+  return Object.entries(inv).map(([k,v])=>k+': '+v).join('\n');
+}
+function updateLiveView(s){
+  const has=s.model!=null;
+  $('lvModel').textContent=s.model||'\u2013';
+  $('lvTrial').textContent=has?`${s.trial||'\u2013'} / ${s.num_trials||'\u2013'}`:'\u2013';
+  $('lvTurn').textContent=has?`${s.turn||'\u2013'} / ${s.max_turns||'\u2013'}`:'\u2013';
+  const act=$('lvAction');act.textContent=s.action||'\u2013';
+  act.classList.toggle('bad',s.parse_ok===false);
+  $('lvThink').textContent=s.think_seconds!=null?s.think_seconds.toFixed(2)+'s':'\u2013';
+  $('lvFacing').textContent=s.facing||'\u2013';
+  const ach=(s.achievements&&s.achievements.length)?s.achievements.join(', '):'none yet';
+  $('lvState').textContent=has?('inventory\n'+fmtInventory(s.inventory)+'\n\nachievements\n'+ach):'\u2013';
+  $('lvResponse').textContent=s.raw_response||'\u2013';
+  $('lvPrompt').textContent=s.prompt||'\u2013';
+
+  const frameKey=has?`${s.model}|${s.trial}|${s.turn}`:null;
+  if(frameKey&&frameKey!==lvFrameKey){
+    lvFrameKey=frameKey;
+    $('liveFrame').innerHTML=`<img alt="state" src="/api/run/frame.png?t=${Date.now()}">`;
+  }else if(!has&&lvFrameKey!==null){
+    lvFrameKey=null;
+    $('liveFrame').innerHTML='<span class="muted mono" style="font-size:28px">\u2013</span>';
+  }
+}
+
+async function pollRunStatus(){
   const s=await api('/api/run/status');
-  $('st_state').textContent=s.state||'idle';
-  $('st_detail').textContent=s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
-  if(s.live_url&&$('liveView').src==='about:blank'){$('liveView').src=s.live_url;$('liveHint').style.display='none';}
-  if(['finished','stopped','error'].includes(s.state)&&!s.running){clearInterval(poll);
-    if(s.state=='finished'){toast('Run finished — generating graphs…','ok');
+  updateStatusDot(s);
+  updateLiveView(s);
+  if(['finished','stopped','error'].includes(s.state)&&!s.running&&lastRunState!==s.state){
+    if(s.state=='finished'){toast('Run finished \u2014 generating graphs\u2026','ok');
       if(s.run_name)analyzeAfterRun(s.run_name);}}
-},700);}
+  lastRunState=s.state;
+}
+setInterval(pollRunStatus,700);
 async function analyzeAfterRun(name){
   const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Graph generation failed: '+r.error,'err');return;}
@@ -740,7 +842,7 @@ setInterval(pollTerminal,900);
 })();
 
 // ---------- boot ----------
-(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();pollTerminal();})();
+(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();pollTerminal();pollRunStatus();})();
 </script>
 </body></html>
 """

@@ -347,30 +347,37 @@ class ExperimentRunner:
                 "success": success,
             })
 
+            # Full per-turn snapshot - shared by the live viewer (its own
+            # server/page, used standalone outside the Studio) and RunControl
+            # (polled by the Studio UI's own /api/run/status, so its Run tab
+            # can render the same detail natively without an iframe).
+            turn_snapshot = {
+                "model": spec.name,
+                "backend": spec.backend,
+                "trial": trial + 1,
+                "num_trials": self.cfg.experiment.num_trials,
+                "turn": turn + 1,
+                "max_turns": self.cfg.experiment.max_turns,
+                "action": parsed.name,
+                "parse_ok": parsed.ok,
+                "think_seconds": round(think_seconds, 3),
+                "facing": pre_facing,
+                "map_text": map_text,
+                "frame": frame_url,
+                "prompt": user_prompt,
+                "raw_response": raw_text,
+                "inventory": {k: int(v) for k, v in info["inventory"].items() if v > 0},
+                "achievements": sorted(
+                    k for k, v in info["achievements"].items() if v > 0
+                ),
+                "success": success,
+                "successes": prior_successes + int(success),
+                "trials_done": prior_trials + 1,
+            }
             if self.live:
-                self.live.update({
-                    "model": spec.name,
-                    "backend": spec.backend,
-                    "trial": trial + 1,
-                    "num_trials": self.cfg.experiment.num_trials,
-                    "turn": turn + 1,
-                    "max_turns": self.cfg.experiment.max_turns,
-                    "action": parsed.name,
-                    "parse_ok": parsed.ok,
-                    "think_seconds": round(think_seconds, 3),
-                    "facing": pre_facing,
-                    "map_text": map_text,
-                    "frame": frame_url,
-                    "prompt": user_prompt,
-                    "raw_response": raw_text,
-                    "inventory": {k: int(v) for k, v in info["inventory"].items() if v > 0},
-                    "achievements": sorted(
-                        k for k, v in info["achievements"].items() if v > 0
-                    ),
-                    "success": success,
-                    "successes": prior_successes + int(success),
-                    "trials_done": prior_trials + 1,
-                })
+                self.live.update(turn_snapshot)
+            if self.control is not None:
+                self.control.update(state="running", **turn_snapshot)
 
             if success:
                 success_turn = turn
