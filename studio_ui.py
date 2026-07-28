@@ -60,6 +60,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     padding:var(--s6);margin-bottom:var(--s4)}
   .card h3{margin-bottom:var(--s4)}
   .sub{color:var(--muted);font-size:13px;margin-top:6px}
+  /* A pill's own vertical padding makes its line taller than plain .sub text
+     (26px vs ~19.5px) - tighten it here so every tab's header is the same
+     height whether its .sub line holds text or a pill. */
+  .sub .pill{padding-top:0;padding-bottom:0}
 
   label{display:block;color:var(--muted);font-size:13px;font-weight:500;margin:var(--s3) 0 var(--s1)}
   input,select,textarea{width:100%;background:var(--raised);color:var(--text);
@@ -190,7 +194,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <!-- CONFIGS -->
   <section id="tab-configs">
     <div class="between" style="margin-bottom:var(--s4)">
-      <h2>Configs</h2>
+      <div><h2>Configs</h2><div class="sub">Browse, edit, duplicate, and run your saved experiment configs.</div></div>
       <button class="btn-primary" onclick="newConfig()">+ New config</button>
     </div>
     <div class="cfg-table" id="cfgRows"></div>
@@ -199,7 +203,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <!-- EDITOR (reached via New / Edit / Duplicate) -->
   <section id="tab-editor" class="hidden">
     <div class="between" style="margin-bottom:var(--s4)">
-      <div><h2>Editor</h2><div class="sub"><span class="pill" id="edPath">unsaved</span></div></div>
+      <div><h2>Editor</h2><div class="sub"><span class="pill" id="edPath">unsaved</span><span class="pill danger hidden" id="edDirty" style="margin-left:8px" title="You have changes that haven't been saved yet">&#9679; Unsaved changes</span></div></div>
       <div class="flex">
         <button class="btn-secondary" onclick="go('configs')">Cancel</button>
         <button class="btn-primary" onclick="saveConfig()">Save config</button>
@@ -271,7 +275,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="between">
         <div><h2>Run</h2>
           <div class="flex" style="margin-top:var(--s2)">
-            <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="min-width:300px" aria-label="Config to run"></select>
+            <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="width:300px;text-overflow:ellipsis" aria-label="Config to run"></select>
           </div>
         </div>
         <div class="flex">
@@ -298,7 +302,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div class="between" style="margin-bottom:var(--s4)">
       <div><h2>Graphs</h2><div class="sub">Result plots for a completed run.</div></div>
       <div class="flex">
-        <select id="runPick" onchange="showRun()" style="min-width:240px" aria-label="Pick a run"></select>
+        <select id="runPick" onchange="showRun()" style="width:240px;text-overflow:ellipsis" aria-label="Pick a run"></select>
         <button class="btn-danger" onclick="deleteRun('runPick')">Delete run</button>
         <button class="btn-primary" onclick="regenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
       </div>
@@ -311,7 +315,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div class="between" style="margin-bottom:var(--s4)">
       <div><h2>Videos</h2><div class="sub">Recorded trial videos for a completed run, per model.</div></div>
       <div class="flex">
-        <select id="vidPick" onchange="showVideos()" style="min-width:240px" aria-label="Pick a run"></select>
+        <select id="vidPick" onchange="showVideos()" style="width:240px;text-overflow:ellipsis" aria-label="Pick a run"></select>
         <button class="btn-danger" onclick="deleteRun('vidPick')">Delete run</button>
       </div>
     </div>
@@ -410,12 +414,21 @@ async function loadConfigs(){
   // it depends on real layout - a fixed row count can't predict wrapping).
   el.querySelectorAll('.models').forEach(m=>{if(m.scrollHeight>m.clientHeight+1)m.classList.add('scroll');});
 }
+// ---------- Unsaved-changes tracking ----------
+let DIRTY=false;
+function markDirty(){DIRTY=true;$('edDirty').classList.remove('hidden');}
+function clearDirty(){DIRTY=false;$('edDirty').classList.add('hidden');}
+// One delegated listener catches every field in the editor - including ones
+// re-rendered later (models, world grid inputs) - without wiring each up by hand.
+document.getElementById('tab-editor').addEventListener('input',markDirty);
+document.getElementById('tab-editor').addEventListener('change',markDirty);
+
 let EDPATH=null;
 function newConfig(){CFG=defaultConfig();EDPATH=null;
-  $('edPath').textContent='new';$('edDelete').classList.add('hidden');formFromCfg();go('editor');}
+  $('edPath').textContent='new';$('edDelete').classList.add('hidden');formFromCfg();clearDirty();go('editor');}
 async function editConfig(path){const r=await api('/api/config?path='+encodeURIComponent(path));
   CFG=r.data;EDPATH=path;$('edPath').textContent=path;
-  $('edDelete').classList.remove('hidden');formFromCfg();go('editor');}
+  $('edDelete').classList.remove('hidden');formFromCfg();clearDirty();go('editor');}
 async function dupConfig(path){if(!confirm('Duplicate '+path+'?'))return;
   const r=await api('/api/config/duplicate','POST',{path});
   if(r.ok){toast('Duplicated to '+r.path,'ok');await loadConfigs();editConfig(r.path);}else toast('Error: '+r.error,'err');}
@@ -493,7 +506,7 @@ function applyPaint(x,y){const info=paletteInfo(SEL);
   if(info.kind=='player'){
     for(let j=0;j<GRID.length;j++)for(let i=0;i<GRID[0].length;i++)
       if(GRID[j][i]=='player')setCell(i,j,'grass');}
-  setCell(x,y,SEL);}
+  setCell(x,y,SEL); markDirty();}
 function resizeGrid(){const w=W(),h=H();const ng=blankGrid(w,h);
   for(let y=0;y<Math.min(h,GRID.length);y++)for(let x=0;x<Math.min(w,GRID[0]?.length||0);x++)ng[y][x]=GRID[y][x];
   GRID=ng;renderGrid();}
@@ -522,20 +535,31 @@ function presetsFor(backend){return (META.model_presets&&META.model_presets[back
 function modelOptions(m){
   const list=presetsFor(m.backend).slice();
   if(m.name&&!list.includes(m.name))list.unshift(m.name);
+  const placeholder=m.name?'':`<option value="" selected disabled>-- pick a model --</option>`;
   const opts=list.map(p=>`<option ${p==m.name?'selected':''}>${p}</option>`).join('');
-  return opts+`<option value="__custom__">(custom id...)</option>`;
+  return placeholder+opts+`<option value="__custom__">(custom id...)</option>`;
 }
 function pickModel(i,v){
   if(v=='__custom__'){const c=prompt('Enter model id:',CFG.models[i].name||'');
     if(c)CFG.models[i].name=c; renderModels(); return;}
   CFG.models[i].name=v; renderModels();
 }
-function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>`
+function switchBackend(i,v){CFG.models[i].backend=v; CFG.models[i].name='';
+  // A model id from one backend usually isn't valid for another, so force a
+  // deliberate re-pick rather than silently keeping a mismatched name.
+  renderModels();}
+function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>{
+  const ready=!!m.name;
+  const readyIcon=ready
+    ?`<span title="Ready - ${m.name} on ${m.backend}" style="color:var(--ok);font-size:16px" aria-label="Model ready">&#10003;</span>`
+    :`<span title="Not ready - pick a model for this backend" style="color:var(--danger);font-size:16px" aria-label="Model not ready">&#10007;</span>`;
+  return `
   <div class="model">
     <div class="between" style="margin-bottom:var(--s2)">
-      <b>${m.name||'model '+(i+1)}</b><button class="btn-danger btn-sm" onclick="delModel(${i})">Remove</button></div>
+      <div class="flex" style="gap:var(--s2)">${readyIcon}<b>${m.name||'model '+(i+1)}</b></div>
+      <button class="btn-danger btn-sm" onclick="delModel(${i})">Remove</button></div>
     <div class="row">
-      <div><label>Backend</label><select onchange="CFG.models[${i}].backend=this.value;renderModels()">
+      <div><label>Backend</label><select onchange="switchBackend(${i},this.value)">
         ${META.backends.map(b=>`<option ${b==m.backend?'selected':''}>${b}</option>`).join('')}</select></div>
       <div><label>Model</label><select onchange="pickModel(${i},this.value)">${modelOptions(m)}</select></div>
     </div>
@@ -553,11 +577,12 @@ function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>`
       <div><label>request_delay</label><input value="${m.request_delay??''}" oninput="setOpt(${i},'request_delay',this.value)"></div>
       <div></div>
     </div>
-  </div>`).join('');}
+  </div>`;
+}).join('');}
 function setOpt(i,k,v){if(v===''){delete CFG.models[i][k];return;}
   CFG.models[i][k]=isNaN(+v)||['reasoning_effort'].includes(k)?v:+v;}
-function addModel(){CFG.models.push({name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',history_turns:8});renderModels();}
-function delModel(i){CFG.models.splice(i,1);renderModels();}
+function addModel(){CFG.models.push({name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',history_turns:8});renderModels();markDirty();}
+function delModel(i){CFG.models.splice(i,1);renderModels();markDirty();}
 function modelsFromForm(){}
 
 // ---------- Save ----------
@@ -569,7 +594,7 @@ async function saveConfig(){cfgFromForm();const name=(CFG.experiment.name||'').t
   if(!name){toast('Enter an experiment name','err');return;}
   if(!NAME_RE.test(name)){toast('Name can only contain letters, numbers, underscores and hyphens','err');return;}
   const r=await api('/api/config/save','POST',{old_path:EDPATH,data:CFG});
-  if(r.ok){EDPATH=r.path;$('edPath').textContent=r.path;$('edDelete').classList.remove('hidden');toast('Saved '+r.path,'ok');}
+  if(r.ok){EDPATH=r.path;$('edPath').textContent=r.path;$('edDelete').classList.remove('hidden');clearDirty();toast('Saved '+r.path,'ok');}
   else toast('Error: '+r.error,'err');}
 
 // ---------- Run ----------
