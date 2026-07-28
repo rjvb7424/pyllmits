@@ -110,7 +110,6 @@ actions:
 models:
   - name: gpt-5.4-2026-03-05
     backend: openai
-    temperature: 0.2
     force_action: true
     action_retries: 1
 

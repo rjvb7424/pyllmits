@@ -634,11 +634,25 @@ function switchBackend(i,v){CFG.models[i].backend=v; CFG.models[i].name='';
   // A model id from one backend usually isn't valid for another, so force a
   // deliberate re-pick rather than silently keeping a mismatched name.
   renderModels();}
+// Reasoning-style models (OpenAI o-series, gpt-5.x/6.x, or anything given a
+// reasoning_effort) reject a custom temperature - mirrors
+// OpenAIModel._is_reasoning_model in models/openai_api.py, so the editor
+// never offers a field that would just be silently dropped at request time.
+function isReasoningModel(m){
+  if(m.reasoning_effort)return true;
+  const n=(m.name||'').toLowerCase();
+  return /^o\d/.test(n)||/^gpt-?[56](\.\d+)?/.test(n);
+}
 function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>{
   const ready=!!m.name;
   const readyIcon=ready
     ?`<span title="Ready - ${m.name} on ${m.backend}" style="color:var(--ok);font-size:16px" aria-label="Model ready">&#10003;</span>`
     :`<span title="Not ready - pick a model for this backend" style="color:var(--danger);font-size:16px" aria-label="Model not ready">&#10007;</span>`;
+  const reasoning=isReasoningModel(m);
+  if(reasoning)delete m.temperature;
+  const temperatureField=reasoning
+    ?`<div><label>temperature</label><div class="muted" style="min-height:40px;display:flex;align-items:center;font-size:13px">Not supported by this model</div></div>`
+    :`<div><label>temperature</label><input value="${m.temperature??''}" oninput="setOpt(${i},'temperature',this.value)"></div>`;
   return `
   <div class="model">
     <div class="between" style="margin-bottom:var(--s2)">
@@ -651,7 +665,7 @@ function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>{
     </div>
     <div class="row">
       <div><label>max_tokens</label><input value="${m.max_tokens??''}" oninput="setOpt(${i},'max_tokens',this.value)"></div>
-      <div><label>temperature</label><input value="${m.temperature??''}" oninput="setOpt(${i},'temperature',this.value)"></div>
+      ${temperatureField}
       <div><label>history_turns</label><input value="${m.history_turns??''}" oninput="setOpt(${i},'history_turns',this.value)"></div>
       <div><label>reasoning_effort</label><input value="${m.reasoning_effort??''}" oninput="setOpt(${i},'reasoning_effort',this.value)"></div>
     </div>

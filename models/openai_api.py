@@ -97,11 +97,15 @@ class OpenAIModel(LanguageModel):
             self._temperature_supported = False
 
     def _is_reasoning_model(self) -> bool:
-        """True for models that reject a custom temperature (OpenAI o-series,
-        or anything given a reasoning_effort)."""
+        """True for models that reject a custom temperature (OpenAI o-series
+        and gpt-5.x/6.x, or anything given a reasoning_effort)."""
         if self._reasoning_effort:
             return True
-        return bool(re.match(r"o\d", (self._model_id or ""), re.IGNORECASE))
+        model_id = self._model_id or ""
+        return bool(
+            re.match(r"o\d", model_id, re.IGNORECASE)
+            or re.match(r"gpt-?[56](\.\d+)?", model_id, re.IGNORECASE)
+        )
 
     # -------------------------------------------------------------------------
     # Lifecycle

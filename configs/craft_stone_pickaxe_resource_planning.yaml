@@ -113,7 +113,6 @@ models:
   - name: gpt-5.4-2026-03-05
     backend: openai
     max_tokens: 1024
-    temperature: 0.2
     reasoning_effort: minimal
     force_action: true
     action_retries: 1
@@ -128,7 +127,6 @@ models:
   - name: o3-2025-04-16
     backend: openai
     max_tokens: 1024
-    temperature: 0.2
     reasoning_effort: minimal
     force_action: true
     action_retries: 1
