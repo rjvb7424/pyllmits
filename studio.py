@@ -249,8 +249,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/config/delete":
                 b = self._body()
                 path = Path(b["path"]).resolve()
-                allowed_dirs = {CONFIGS_DIR.resolve(), ROOT.resolve()}
-                if path.suffix != ".yaml" or path.parent not in allowed_dirs:
+                if path.suffix != ".yaml" or path.parent != CONFIGS_DIR.resolve():
                     return self._send(400, {"ok": False, "error": "refusing to delete outside configs/"})
                 if not path.exists():
                     return self._send(404, {"ok": False, "error": "not found"})
@@ -357,12 +356,9 @@ class Handler(BaseHTTPRequestHandler):
         return str(run_dir)
 
     def _find_config_path(self, name: str) -> Path | None:
-        """The existing config file for this experiment name, if any (configs/ or the project root)."""
-        for d in (CONFIGS_DIR, ROOT):
-            candidate = d / f"{name}.yaml"
-            if candidate.exists():
-                return candidate
-        return None
+        """The existing config file for this experiment name, if any (configs/ only)."""
+        candidate = CONFIGS_DIR / f"{name}.yaml"
+        return candidate if candidate.exists() else None
 
     def _rename_run_dir_for_config(self, old_exp: dict, new_exp: dict) -> str | None:
         """Move an existing run folder to match a renamed experiment, so its
@@ -446,11 +442,12 @@ class Handler(BaseHTTPRequestHandler):
         return min(len(m.get("trials", [])) for m in models.values())
 
     def _list_configs(self):
+        # Only ever configs/*.yaml - the Studio's list must line up 1:1 with
+        # that folder's actual contents, never include files from elsewhere
+        # (e.g. the project root's default config.yaml used by the CLI).
         out = []
-        for d in (CONFIGS_DIR, ROOT):
-            if not d.exists():
-                continue
-            for f in sorted(d.glob("*.yaml")):
+        if CONFIGS_DIR.exists():
+            for f in sorted(CONFIGS_DIR.glob("*.yaml")):
                 try:
                     data = load_yaml(f)
                     exp = data.get("experiment", {})

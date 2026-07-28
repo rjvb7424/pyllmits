@@ -26,8 +26,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --radius:6px; --radius-lg:10px; --shadow:0 1px 2px rgba(0,0,0,.4);
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    /* config table columns: Name | Status | Size | Objective | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(150px,1.2fr) 84px 70px 190px 66px 66px minmax(200px,2fr) 310px;
+    /* config table columns: Name | Size | Objective | Status | Trials | Turns | Models | Actions */
+    --cfg-cols:minmax(160px,1.1fr) 70px 150px 84px 66px 66px minmax(240px,1.6fr) 310px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -54,7 +54,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .tab.active{color:var(--on-accent);background:var(--accent)}
   .tab.active:hover{background:var(--accent-press)}
 
-  main{padding:var(--s6);max-width:1360px;margin:0 auto}
+  main{padding:var(--s6);max-width:1680px;margin:0 auto}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
     padding:var(--s6);margin-bottom:var(--s4)}
@@ -99,7 +99,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   /* exec-style table: header + rows share the same fixed column tracks */
   .cfg-table{display:flex;flex-direction:column;gap:var(--s2);overflow-x:auto}
-  .cfg-head,.cfg{display:grid;grid-template-columns:var(--cfg-cols);gap:var(--s4);
+  .cfg-head,.cfg{display:grid;grid-template-columns:var(--cfg-cols);gap:var(--s3);
     padding:var(--s3) var(--s4);border:1px solid transparent}
   .cfg-head>*,.cfg>*{min-width:0}                    /* keep columns from bleeding */
   .cfg-head{color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;
@@ -111,10 +111,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
   .cfg .cell{color:var(--text);font-family:var(--mono);font-size:13px}
   .cfg .obj .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:center;overflow:hidden;
-    max-height:72px;                                  /* about 3 rows of pills, then fade */
-    -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent);
-    mask-image:linear-gradient(to bottom,#000 78%,transparent)}
+  .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;align-self:start;
+    overflow-y:auto;max-height:72px;                  /* ~3 rows visible; scroll for the rest */
+    padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .cfg .models::-webkit-scrollbar{width:6px}
+  .cfg .models::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
   .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-start;align-items:center;flex-wrap:wrap}
 
   .empty{text-align:center;color:var(--muted);padding:var(--s12) var(--s4);border:1px dashed var(--line2);border-radius:var(--radius-lg)}
@@ -154,7 +155,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   @media (max-width:820px){
     .cfg-head{display:none}
     .cfg{grid-template-columns:1fr;gap:var(--s2);min-height:0;align-items:stretch;padding:var(--s3) var(--s4)}
-    .cfg .models{-webkit-mask-image:none;mask-image:none;max-height:none;flex-wrap:wrap}
+    .cfg .models{max-height:none;overflow-y:visible;flex-wrap:wrap}
     .cfg .name{-webkit-line-clamp:2}
     .cfg .actions{justify-content:flex-start}
     .cfg .actions .btn-primary{flex:1}
@@ -339,6 +340,39 @@ function defaultConfig(){return {
   models:[{name:'gpt-4o-mini',backend:'openai',history_turns:8}]};}
 
 // ---------- Configs list ----------
+// Model pill colors: grouped by provider family, with distinct shades within
+// a family for each specific model (deterministic per name, so a model always
+// gets the same shade). OpenAI -> green (GPT-5.x darker, GPT-6.x lighter);
+// DeepSeek -> blue (newer versions darker); other known families get their
+// own hue so the column stays readable at a glance.
+function hashString(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))>>>0;}return h;}
+function modelColorFamily(n){
+  // Amber/gold for OpenAI - kept away from green/red so it never reads as a
+  // Completed/Incomplete status color.
+  if(/gpt-6|gpt6/.test(n))return{hue:42,sat:60,light:58};              // GPT-6.x: lighter amber
+  if(/gpt-5|gpt5/.test(n))return{hue:38,sat:70,light:32};              // GPT-5.x: dark amber
+  if(/gpt-oss|gpt-4|(^|[^a-z])o\d/.test(n))return{hue:40,sat:55,light:42}; // other OpenAI: mid amber
+  if(/deepseek/.test(n)){
+    const v=n.match(/v(\d+(?:\.\d+)?)/), r=n.match(/r(\d+)/);
+    const score=v?parseFloat(v[1]):(r?parseFloat(r[1])*0.6:1.5);       // higher version = more modern
+    return{hue:214,sat:60,light:Math.max(16,Math.min(46,46-score*6))}; // modern -> darker blue
+  }
+  if(/qwen/.test(n))return{hue:280,sat:40,light:36};
+  if(/llama/.test(n))return{hue:22,sat:55,light:38};
+  if(/gemini/.test(n))return{hue:195,sat:50,light:36};
+  if(/phi-?\d/.test(n))return{hue:325,sat:40,light:38};
+  if(/heuristic|baseline/.test(n))return{hue:0,sat:0,light:45};
+  return{hue:210,sat:12,light:42};
+}
+function modelPillStyle(name){
+  const n=name.toLowerCase(), fam=modelColorFamily(n), hash=hashString(n);
+  const h=(fam.hue+((hash>>3)%7)-3+360)%360;                // small per-model hue nudge
+  const l=Math.max(14,Math.min(66,fam.light+(hash%9)-4));   // per-model shade within the family
+  const s=fam.sat;
+  return `background:hsla(${h},${s}%,${l}%,.22);border-color:hsla(${h},${s}%,${Math.min(78,l+24)}%,.55);`+
+         `color:hsl(${h},${Math.min(s+18,85)}%,${Math.min(90,l+44)}%)`;
+}
+function modelPill(name){return `<span class="pill" style="${modelPillStyle(name)}">${name}</span>`;}
 function configStatus(c){
   if(c.error)return '<span class="pill">error</span>';
   if(c.trials==null)return '<span class="pill">—</span>';
@@ -350,16 +384,16 @@ async function loadConfigs(){
   const r=await api('/api/configs');
   if(!r.configs||!r.configs.length){el.innerHTML='<div class="empty"><b>No configs yet</b>Create one with + New config, then paint a world.</div>';return;}
   el.innerHTML=`<div class="cfg-head">
-      <div>Name</div><div>Status</div><div>Size</div><div>Objective</div><div>Trials</div><div>Turns</div>
+      <div>Name</div><div>Size</div><div>Objective</div><div>Status</div><div>Trials</div><div>Turns</div>
       <div>Models</div><div>Actions</div>
     </div>`+r.configs.map(c=>`<div class="cfg">
     <div class="name">${c.name||'(unnamed)'}</div>
-    <div class="cell">${configStatus(c)}</div>
     <div class="cell">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
     <div class="obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
+    <div class="cell">${configStatus(c)}</div>
     <div class="cell">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
     <div class="cell">${c.turns!=null?c.turns:'\u2014'}</div>
-    <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).map(m=>`<span class="pill">${m}</span>`).join('')||'<span class="muted">\u2014</span>'}</div>
+    <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).map(modelPill).join('')||'<span class="muted">\u2014</span>'}</div>
     <div class="actions">
       <button class="btn-secondary btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
       <button class="btn-secondary btn-sm" onclick='editConfig(${JSON.stringify(c.path)})'>Edit</button>
