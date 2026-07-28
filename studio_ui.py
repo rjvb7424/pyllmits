@@ -117,9 +117,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
      these down to a 22px tile size.) */
   .cfg .field{color:var(--text);font-family:var(--mono);font-size:13px;display:flex;align-items:center}
   .cfg .obj .pill{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;align-self:start;
+  /* Short model lists (fit without scrolling) center vertically like every
+     other pill column; once there are enough models to need scrolling,
+     .scroll (added in JS, after measuring) pins content to the top instead
+     so scrolling down always reveals more rather than jumping around. */
+  .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:center;align-self:center;
     overflow-y:auto;max-height:72px;                  /* ~3 rows visible; scroll for the rest */
     padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .cfg .models.scroll{align-content:flex-start;align-self:start}
   .cfg .models::-webkit-scrollbar{width:6px}
   .cfg .models::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
   .cfg .actions{display:flex;gap:var(--s2);justify-content:flex-start;align-items:center;flex-wrap:wrap}
@@ -406,6 +411,10 @@ async function loadConfigs(){
       <button class="btn-primary btn-sm" onclick='selectRun(${JSON.stringify(c.path)})'>&#9654; Run</button>
       <button class="btn-danger btn-sm" onclick='delConfigRow(${JSON.stringify(c.path)})'>Delete</button>
     </div></div>`).join('');
+  // Only lists long enough to actually need scrolling pin to the top; a
+  // short list centers like every other column (checked post-render, since
+  // it depends on real layout - a fixed row count can't predict wrapping).
+  el.querySelectorAll('.models').forEach(m=>{if(m.scrollHeight>m.clientHeight+1)m.classList.add('scroll');});
 }
 let EDPATH=null;
 function newConfig(){CFG=defaultConfig();EDPATH=null;
