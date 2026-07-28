@@ -186,7 +186,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div class="between" style="margin-bottom:var(--s4)">
       <div><h2>Editor</h2><div class="sub"><span class="pill" id="edPath">unsaved</span></div></div>
       <div class="flex">
-        <input id="savePath" style="width:300px" placeholder="configs/my_world.yaml" aria-label="Save path"/>
         <button class="btn-secondary" onclick="go('configs')">Cancel</button>
         <button class="btn-danger hidden" id="edDelete" onclick="deleteCurrentConfig()">Delete</button>
         <button class="btn-primary" onclick="saveConfig()">Save config</button>
@@ -195,7 +194,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
     <div class="card"><h3>Experiment</h3>
       <div class="row">
-        <div><label for="e_name">Name</label><input id="e_name"></div>
+        <div><label for="e_name">Name</label><input id="e_name">
+          <div class="sub" style="margin-top:4px">This is also the config's file name (and run folder) - letters, numbers, underscores and hyphens only.</div>
+        </div>
         <div><label for="e_trials">Trials</label><input id="e_trials" type="number" min="1"></div>
         <div><label for="e_turns">Max turns</label><input id="e_turns" type="number" min="1"></div>
         <div><label for="e_seed">Seed</label><input id="e_seed" type="number"></div>
@@ -290,6 +291,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div><h2>Graphs</h2><div class="sub">Result plots for a completed run.</div></div>
       <div class="flex">
         <select id="runPick" onchange="showRun()" style="min-width:240px" aria-label="Pick a run"></select>
+        <button class="btn-danger" onclick="deleteRun('runPick')">Delete run</button>
         <button class="btn-primary" onclick="regenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
       </div>
     </div>
@@ -302,6 +304,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div><h2>Videos</h2><div class="sub">Recorded trial videos for a completed run, per model.</div></div>
       <div class="flex">
         <select id="vidPick" onchange="showVideos()" style="min-width:240px" aria-label="Pick a run"></select>
+        <button class="btn-danger" onclick="deleteRun('vidPick')">Delete run</button>
       </div>
     </div>
     <div id="videosList"></div>
@@ -356,10 +359,10 @@ async function loadConfigs(){
     </div></div>`).join('');
 }
 let EDPATH=null;
-function newConfig(){CFG=defaultConfig();EDPATH=null;$('savePath').value='configs/'+CFG.experiment.name+'.yaml';
+function newConfig(){CFG=defaultConfig();EDPATH=null;
   $('edPath').textContent='new';$('edDelete').classList.add('hidden');formFromCfg();go('editor');}
 async function editConfig(path){const r=await api('/api/config?path='+encodeURIComponent(path));
-  CFG=r.data;EDPATH=path;$('savePath').value=path;$('edPath').textContent=path;
+  CFG=r.data;EDPATH=path;$('edPath').textContent=path;
   $('edDelete').classList.remove('hidden');formFromCfg();go('editor');}
 async function dupConfig(path){const r=await api('/api/config/duplicate','POST',{path});
   if(r.ok){toast('Duplicated to '+r.path,'ok');await loadConfigs();editConfig(r.path);}else toast('Error: '+r.error,'err');}
@@ -511,10 +514,16 @@ function delModel(i){CFG.models.splice(i,1);renderModels();}
 function modelsFromForm(){}
 
 // ---------- Save ----------
-async function saveConfig(){cfgFromForm();const path=$('savePath').value.trim();
-  if(!path){toast('Enter a save path','err');return;}
-  const r=await api('/api/config/save','POST',{path,data:CFG});
-  if(r.ok){$('edPath').textContent=r.path;toast('Saved '+r.path,'ok');}else toast('Error: '+r.error,'err');}
+// The experiment name IS the file name - there's no separate save-path
+// field - so validate it here for quick feedback; the server re-checks
+// (and does the actual rename) since it alone knows what else exists.
+const NAME_RE=/^[A-Za-z0-9_-]+$/;
+async function saveConfig(){cfgFromForm();const name=(CFG.experiment.name||'').trim();
+  if(!name){toast('Enter an experiment name','err');return;}
+  if(!NAME_RE.test(name)){toast('Name can only contain letters, numbers, underscores and hyphens','err');return;}
+  const r=await api('/api/config/save','POST',{old_path:EDPATH,data:CFG});
+  if(r.ok){EDPATH=r.path;$('edPath').textContent=r.path;$('edDelete').classList.remove('hidden');toast('Saved '+r.path,'ok');}
+  else toast('Error: '+r.error,'err');}
 
 // ---------- Run ----------
 let RUNPATH=null, poll=null;
@@ -581,6 +590,17 @@ function showVideos(){const name=$('vidPick').value;const run=(window._runs||[])
   if(!run||!run.videos.length){$('videosList').innerHTML='<div class="empty"><b>No videos yet</b>Run this config with record_video enabled.</div>';return;}
   $('videosList').innerHTML=run.videos.map(f=>`<div><div class="muted mono" style="font-size:12px;margin-bottom:4px">${f}</div>
     <video class="plot" controls preload="metadata" src="/api/video?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}"></video></div>`).join('');}
+// Deletes a run's whole folder (results/plots/videos) directly - covers runs
+// left behind by configs deleted before that cascade existed, or whose
+// config was removed outside the Studio, since those otherwise have no
+// config row to delete from.
+async function deleteRun(selectId){const name=$(selectId).value;
+  if(!name){toast('Pick a run first','err');return;}
+  if(!confirm('Delete run \''+name+'\'? This permanently deletes its results, plots and videos. This cannot be undone.'))return;
+  const r=await api('/api/run/delete','POST',{run:name});
+  if(!r.ok){toast('Error: '+r.error,'err');return;}
+  toast('Deleted run '+name,'ok');
+  await loadRuns(); showRun(); showVideos();}
 
 // ---------- boot ----------
 (async()=>{META=await api('/api/meta');renderPalette();loadConfigs();})();

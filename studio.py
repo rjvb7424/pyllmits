@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import shutil
 import threading
 import webbrowser
@@ -37,6 +38,10 @@ LOG = logging.getLogger("crafter_experiment.studio")
 ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
+
+# The experiment name IS the config's file name (and its run folder name) -
+# so it has to be safe to use as one. No path separators, dots, or spaces.
+EXPERIMENT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Palette: what you can paint on the world grid. Each maps to a world-config
 # feature/entity key (or the base terrain / player start). "kind" tells the
@@ -239,11 +244,8 @@ class Handler(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         try:
             if p == "/api/config/save":
-                b = self._body()
-                path = Path(b["path"])
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(dump_yaml(b["data"]))
-                return self._send(200, {"ok": True, "path": str(path)})
+                status, result = self._save_config(self._body())
+                return self._send(status, result)
             if p == "/api/config/delete":
                 b = self._body()
                 path = Path(b["path"]).resolve()
@@ -283,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/run/stop":
                 STUDIO.stop_run()
                 return self._send(200, {"ok": True})
+            if p == "/api/run/delete":
+                status, result = self._delete_run(self._body().get("run", ""))
+                return self._send(status, result)
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -351,6 +356,72 @@ class Handler(BaseHTTPRequestHandler):
         shutil.rmtree(run_dir)
         return str(run_dir)
 
+    def _find_config_path(self, name: str) -> Path | None:
+        """The existing config file for this experiment name, if any (configs/ or the project root)."""
+        for d in (CONFIGS_DIR, ROOT):
+            candidate = d / f"{name}.yaml"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _rename_run_dir_for_config(self, old_exp: dict, new_exp: dict) -> str | None:
+        """Move an existing run folder to match a renamed experiment, so its
+        results/videos/plots stay attached instead of being orphaned under the
+        old name. Returns an error message if the rename can't happen safely,
+        else None.
+        """
+        old_run_dir = self._run_dir_for_config(old_exp)
+        new_run_dir = self._run_dir_for_config(new_exp)
+        if old_run_dir is None or not old_run_dir.exists() or old_run_dir == new_run_dir:
+            return None
+        if new_run_dir is None:
+            return None
+        if new_run_dir.exists():
+            return f"Can't rename: run data already exists at {new_run_dir}."
+        new_run_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_run_dir), str(new_run_dir))
+        return None
+
+    def _save_config(self, body: dict) -> tuple[int, dict]:
+        """Save (or rename) a config.
+
+        The experiment name IS the file name - there's no separate save path
+        the user can set independently - so this validates the name and, if
+        it changed from what was loaded, renames the .yaml (and its run
+        folder, if one exists) to match rather than leaving a stale copy
+        behind under the old name.
+        """
+        data = body.get("data") or {}
+        exp = data.get("experiment") or {}
+        name = (exp.get("name") or "").strip()
+        if not name:
+            return 400, {"ok": False, "error": "Experiment name can't be empty."}
+        if not EXPERIMENT_NAME_RE.match(name):
+            return 400, {"ok": False, "error":
+                         "Experiment name can only contain letters, numbers, underscores and hyphens."}
+
+        old_path = Path(body["old_path"]).resolve() if body.get("old_path") else None
+        existing = self._find_config_path(name)
+        if existing is not None and existing.resolve() != old_path:
+            return 400, {"ok": False, "error": f"A config named '{name}' already exists."}
+
+        directory = old_path.parent if old_path is not None else CONFIGS_DIR
+        new_path = directory / f"{name}.yaml"
+
+        if old_path is not None and old_path.exists() and old_path.resolve() != new_path.resolve():
+            try:
+                old_exp = load_yaml(old_path).get("experiment", {})
+            except Exception:
+                old_exp = {}
+            rename_error = self._rename_run_dir_for_config(old_exp, exp)
+            if rename_error:
+                return 400, {"ok": False, "error": rename_error}
+            old_path.unlink()
+
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        new_path.write_text(dump_yaml(data))
+        return 200, {"ok": True, "path": str(new_path)}
+
     def _trials_done(self, exp: dict) -> int:
         """How many trials of this experiment already have results, per results.json.
 
@@ -416,6 +487,26 @@ class Handler(BaseHTTPRequestHandler):
                 clips = [f.name for f in sorted(videos.glob("*.mp4"))] if videos.exists() else []
                 out.append({"name": d.name, "plots": files, "videos": clips})
         return out
+
+    def _delete_run(self, run_name: str) -> tuple[int, dict]:
+        """Delete a run's whole folder (results.json/plots/videos) directly.
+
+        Configs already cascade-delete their run folder (see
+        _delete_run_dir_for_config), but a run can still be orphaned - e.g.
+        one deleted before that existed, or whose config was removed outside
+        the Studio - and there's otherwise no way to clean it up from the UI.
+        """
+        if not run_name:
+            return 400, {"ok": False, "error": "no run given"}
+        run_dir = (RUNS_DIR / run_name).resolve()
+        if run_dir.parent != RUNS_DIR.resolve():
+            return 400, {"ok": False, "error": "invalid run name"}
+        if not run_dir.exists():
+            return 404, {"ok": False, "error": "not found"}
+        if STUDIO.is_running() and STUDIO.run_name == run_name:
+            return 400, {"ok": False, "error": "that experiment is currently running - stop it first"}
+        shutil.rmtree(run_dir)
+        return 200, {"ok": True, "path": str(run_dir)}
 
     def _preview(self, world: dict):
         """Render the world to an ASCII map via the real engine for accuracy."""
