@@ -25,8 +25,10 @@ import json
 import logging
 import re
 import shutil
+import sys
 import threading
 import webbrowser
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -38,6 +40,82 @@ LOG = logging.getLogger("crafter_experiment.studio")
 ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
+
+
+# =============================================================================
+#  Console capture - mirrors the real terminal (stdout + every log line, from
+#  the Studio itself and from experiment runs) into the Run tab's terminal
+#  panel. Two independent taps feed the same ring buffer: a logging.Handler
+#  on the root logger (import-order-independent - basicConfig may run before
+#  or after this module is imported, e.g. via main.py --studio) and a stdout
+#  tee (for the handful of plain print() calls, e.g. this file's banner).
+# =============================================================================
+class ConsoleLog:
+    MAX_LINES = 4000
+
+    def __init__(self):
+        self._lines = deque(maxlen=self.MAX_LINES)
+        self._seq = 0
+        self._lock = threading.Lock()
+
+    def append(self, stream: str, text: str):
+        if not text:
+            return
+        with self._lock:
+            self._seq += 1
+            self._lines.append({"seq": self._seq, "stream": stream, "text": text})
+
+    def since(self, seq: int, limit: int = 500) -> tuple[list[dict], int]:
+        with self._lock:
+            lines = [l for l in self._lines if l["seq"] > seq]
+            next_seq = self._seq
+        if len(lines) > limit:
+            lines = lines[-limit:]
+        return lines, next_seq
+
+
+CONSOLE = ConsoleLog()
+
+
+class _TeeStdout:
+    """Passes writes through to the real stdout untouched, and also splits
+    them on newlines into CONSOLE so the web UI sees exactly what a terminal
+    running this process would show."""
+
+    def __init__(self, real):
+        self._real = real
+        self._buf = ""
+
+    def write(self, s):
+        self._real.write(s)
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            CONSOLE.append("stdout", line)
+        return len(s)
+
+    def flush(self):
+        self._real.flush()
+
+    def isatty(self):
+        return getattr(self._real, "isatty", lambda: False)()
+
+
+class _ConsoleLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            CONSOLE.append("stderr" if record.levelno >= logging.WARNING else "log",
+                            self.format(record))
+        except Exception:
+            pass
+
+
+def _install_console_capture():
+    if not isinstance(sys.stdout, _TeeStdout):
+        sys.stdout = _TeeStdout(sys.stdout)
+    handler = _ConsoleLogHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)s  %(message)s", "%H:%M:%S"))
+    logging.getLogger().addHandler(handler)
 
 # The experiment name IS the config's file name (and its run folder name) -
 # so it has to be safe to use as one. No path separators, dots, or spaces.
@@ -234,6 +312,10 @@ class Handler(BaseHTTPRequestHandler):
                 if png:
                     return self._send(200, png, "image/png")
                 return self._send(404, b"", "image/png")
+            if p == "/api/console":
+                since = int(q.get("since", ["0"])[0])
+                lines, next_seq = CONSOLE.since(since)
+                return self._send(200, {"lines": lines, "next": next_seq})
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -508,6 +590,7 @@ class Handler(BaseHTTPRequestHandler):
 #  Entry point
 # =============================================================================
 def serve(port: int = 8010, open_browser: bool = True):
+    _install_console_capture()
     CONFIGS_DIR.mkdir(exist_ok=True)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}"

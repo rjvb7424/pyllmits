@@ -30,8 +30,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --cfg-cols:minmax(130px,1fr) 70px 120px 96px 60px 60px minmax(220px,1.4fr) 300px;
   }
   *{box-sizing:border-box}
+  html,body{height:100%}
   html{-webkit-text-size-adjust:100%}
-  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--ui);-webkit-font-smoothing:antialiased}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--ui);-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;overflow:hidden}
   h1,h2,h3{margin:0;line-height:1.2;font-weight:600;letter-spacing:-.01em}
   h2{font-size:22px} h3{font-size:18px}
   a{color:var(--accent)}
@@ -42,7 +44,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .hidden{display:none!important}
   ::selection{background:var(--accent);color:var(--on-accent)}
 
-  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:var(--s4);
+  header{flex-shrink:0;z-index:20;display:flex;align-items:center;gap:var(--s4);
     padding:var(--s3) var(--s6);background:var(--surface);border-bottom:1px solid var(--line)}
   .brand{display:flex;align-items:center;gap:var(--s2);font-weight:700;font-size:16px;letter-spacing:-.02em}
   .brand .mark{width:20px;height:20px;border-radius:5px;
@@ -54,7 +56,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .tab.active{color:var(--on-accent);background:var(--accent)}
   .tab.active:hover{background:var(--accent-press)}
 
-  main{padding:var(--s6);max-width:1500px;margin:0 auto}
+  main{flex:1;overflow-y:auto;padding:var(--s6);max-width:1500px;margin:0 auto;width:100%}
+
+  /* Terminal - pinned to the bottom of every tab, like the header at the
+     top. Mirrors the real process's stdout/stderr + logging 1:1 (see
+     studio.py's ConsoleLog / _install_console_capture), not a separate
+     "activity log" - so it looks and behaves like an actual terminal. */
+  #terminal{flex-shrink:0;z-index:20;display:flex;flex-direction:column;height:240px;
+    background:#0c0c0c;border-top:1px solid var(--line)}
+  #terminal.collapsed{height:auto!important}
+  #terminal.collapsed #termOut,#terminal.collapsed #termResize{display:none}
+  #termResize{height:5px;flex-shrink:0;cursor:row-resize}
+  #termResize:hover,#termResize.active{background:var(--accent)}
+  .term-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+    padding:3px var(--s4);background:#161616;border-bottom:1px solid #2a2a2a;flex-shrink:0}
+  .term-bar .term-title{display:flex;align-items:center;gap:8px;color:#cfd3d8;
+    font:600 10.5px var(--ui);text-transform:uppercase;letter-spacing:.06em}
+  #termOut{flex:1;overflow-y:auto;margin:0;padding:var(--s2) var(--s4);
+    font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#d4d4d4;
+    white-space:pre-wrap;word-break:break-word}
+  #termOut .line.stderr{color:#f27272}
+  #termOut .line.log{color:#8fb8e0}
+  #termOut .empty{color:#5a5f66;font-style:italic}
+  @media (max-width:768px){#terminal{height:180px}}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
     padding:var(--s6);margin-bottom:var(--s4)}
@@ -322,6 +346,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div id="videosList"></div>
   </section>
 </main>
+
+<div id="terminal" class="collapsed">
+  <div id="termResize" title="Drag to resize"></div>
+  <div class="term-bar">
+    <div class="term-title">Terminal</div>
+    <div class="flex" style="gap:4px">
+      <button class="btn-ghost btn-sm" id="termToggle" onclick="toggleTerminal()" aria-label="Expand terminal">&#9650;</button>
+    </div>
+  </div>
+  <pre id="termOut"><div class="empty">Waiting for output&hellip;</div></pre>
+</div>
+
 <div id="toasts" aria-live="polite"></div>
 
 <script>
@@ -674,8 +710,37 @@ async function deleteRun(selectId){const name=$(selectId).value;
   toast('Deleted run '+name,'ok');
   await loadRuns(); showRun(); showVideos();}
 
+// ---------- Terminal (mirrors the real process's stdout/stderr/logging) ----------
+let TERM_SEQ=0;
+function toggleTerminal(){const t=$('terminal'),collapsed=t.classList.toggle('collapsed');
+  $('termToggle').innerHTML=collapsed?'&#9650;':'&#9660;';
+  $('termToggle').setAttribute('aria-label',collapsed?'Expand terminal':'Collapse terminal');}
+function termAppend(lines){
+  const out=$('termOut'); const empty=out.querySelector('.empty'); if(empty)empty.remove();
+  const atBottom=out.scrollHeight-out.scrollTop-out.clientHeight<24;
+  const frag=document.createDocumentFragment();
+  for(const l of lines){const d=document.createElement('div');d.className='line '+(l.stream||'stdout');
+    d.textContent=l.text;frag.appendChild(d);}
+  out.appendChild(frag);
+  while(out.childElementCount>4000)out.removeChild(out.firstChild);
+  if(atBottom)out.scrollTop=out.scrollHeight;
+}
+async function pollTerminal(){
+  try{const r=await api('/api/console?since='+TERM_SEQ);
+    if(r.lines&&r.lines.length){TERM_SEQ=r.next;termAppend(r.lines);}}
+  catch(e){/* server not reachable this tick - next poll retries */}
+}
+setInterval(pollTerminal,900);
+// Drag the strip above the terminal to resize it, like an editor's panel.
+(function(){const handle=$('termResize'),term=$('terminal');let dragging=false;
+  handle.addEventListener('mousedown',e=>{dragging=true;handle.classList.add('active');e.preventDefault();});
+  window.addEventListener('mousemove',e=>{if(!dragging)return;
+    term.style.height=Math.min(window.innerHeight*0.75,Math.max(120,window.innerHeight-e.clientY))+'px';});
+  window.addEventListener('mouseup',()=>{dragging=false;handle.classList.remove('active');});
+})();
+
 // ---------- boot ----------
-(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();})();
+(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();pollTerminal();})();
 </script>
 </body></html>
 """
