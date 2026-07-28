@@ -362,11 +362,13 @@ async function editConfig(path){const r=await api('/api/config?path='+encodeURIC
 async function dupConfig(path){const r=await api('/api/config/duplicate','POST',{path});
   if(r.ok){toast('Duplicated to '+r.path,'ok');await loadConfigs();editConfig(r.path);}else toast('Error: '+r.error,'err');}
 async function deleteConfigPath(path){const r=await api('/api/config/delete','POST',{path});
-  if(r.ok){toast('Deleted '+r.path,'ok');return true;}toast('Error: '+r.error,'err');return false;}
-async function delConfigRow(path){if(!confirm('Delete '+path+'? This cannot be undone.'))return;
+  if(r.ok){toast(r.deleted_run_dir?'Deleted '+r.path+' and its run data':'Deleted '+r.path,'ok');return true;}
+  toast('Error: '+r.error,'err');return false;}
+const DELETE_WARNING='? This also permanently deletes that experiment\'s results, videos and graphs (its runs/ folder). This cannot be undone.';
+async function delConfigRow(path){if(!confirm('Delete '+path+DELETE_WARNING))return;
   if(await deleteConfigPath(path))await loadConfigs();}
 async function deleteCurrentConfig(){if(!EDPATH){toast('Nothing to delete — this config isn’t saved yet','err');return;}
-  if(!confirm('Delete '+EDPATH+'? This cannot be undone.'))return;
+  if(!confirm('Delete '+EDPATH+DELETE_WARNING))return;
   if(await deleteConfigPath(EDPATH))go('configs');}
 
 // ---------- Editor form <-> CFG ----------

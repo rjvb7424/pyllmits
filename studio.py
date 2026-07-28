@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import shutil
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -246,8 +247,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(400, {"ok": False, "error": "refusing to delete outside configs/"})
                 if not path.exists():
                     return self._send(404, {"ok": False, "error": "not found"})
+                deleted_run_dir = self._delete_run_dir_for_config(path)
                 path.unlink()
-                return self._send(200, {"ok": True, "path": str(path)})
+                return self._send(200, {"ok": True, "path": str(path), "deleted_run_dir": deleted_run_dir})
             if p == "/api/config/duplicate":
                 b = self._body()
                 src = Path(b["path"])
@@ -283,14 +285,21 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- data helpers ---------------------------------------------------------
     def _regen_graphs(self, run_name):
-        """Rebuild all plots for a run from its results.json (no model calls)."""
+        """Rebuild all plots for a run from its results.json (no model calls).
+
+        Every plot here - both analyze_results.py's and analyze_scaling.py's -
+        is scoped to this one run's results.json, so an experiment only ever
+        shows its own models, never another experiment's.
+        """
         import json
         import analyze_results as ar
+        import analyze_scaling as asc
         rp = RUNS_DIR / run_name / "results.json"
         if not rp.exists():
             return {"ok": False, "error": "no results.json for this run"}
         results = json.loads(rp.read_text())
         rows = ar.summarise(results)
+        scaling_rows = asc.collect_model_rows(results)
         name = ar.get_experiment_name(results, rp)
         plots = RUNS_DIR / run_name / "plots"
         plots.mkdir(parents=True, exist_ok=True)
@@ -299,7 +308,43 @@ class Handler(BaseHTTPRequestHandler):
         ar.plot_think_time(rows, plots / "think_time.png", name)
         ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
         ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
+        asc.plot_param_count_vs_accuracy(scaling_rows, plots / "param_count_vs_accuracy.png", name)
+        asc.plot_accuracy_by_family(results, plots / "accuracy_by_family.png", name)
+        asc.plot_success_rate_confidence_intervals(
+            results, plots / "success_rate_confidence_intervals.png", name
+        )
         return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
+
+    def _run_dir_for_config(self, exp: dict) -> Path | None:
+        """Where this config's run data (results.json/plots/videos) would live."""
+        name = exp.get("name")
+        if not name:
+            return None
+        output_dir = Path(exp.get("output_dir", "runs"))
+        if not output_dir.is_absolute():
+            output_dir = ROOT / output_dir
+        return output_dir / name
+
+    def _delete_run_dir_for_config(self, config_path: Path) -> str | None:
+        """Remove a deleted config's run folder (results/plots/videos) so its
+        graphs don't linger in the Studio after the config is gone.
+
+        Only ever deletes inside this project's own tree - if a config's
+        output_dir was pointed somewhere unexpected, this refuses rather than
+        risking an rmtree outside the repo.
+        """
+        try:
+            exp = load_yaml(config_path).get("experiment", {})
+        except Exception:
+            return None
+        run_dir = self._run_dir_for_config(exp)
+        if run_dir is None:
+            return None
+        run_dir = run_dir.resolve()
+        if not run_dir.exists() or ROOT.resolve() not in run_dir.parents:
+            return None
+        shutil.rmtree(run_dir)
+        return str(run_dir)
 
     def _trials_done(self, exp: dict) -> int:
         """How many trials of this experiment already have results, per results.json.
@@ -309,13 +354,10 @@ class Handler(BaseHTTPRequestHandler):
         than the others is still mid-run; use the minimum across models as
         the experiment's overall completed-trial count.
         """
-        name = exp.get("name")
-        if not name:
+        run_dir = self._run_dir_for_config(exp)
+        if run_dir is None:
             return 0
-        output_dir = Path(exp.get("output_dir", "runs"))
-        if not output_dir.is_absolute():
-            output_dir = ROOT / output_dir
-        results_path = output_dir / name / "results.json"
+        results_path = run_dir / "results.json"
         if not results_path.exists():
             return 0
         try:
