@@ -27,7 +27,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     /* config table columns: Name | Size | Objective | Status | Trials | Turns | Models | Actions */
-    --cfg-cols:minmax(160px,1.1fr) 70px 150px 84px 66px 66px minmax(240px,1.6fr) 310px;
+    --cfg-cols:minmax(130px,1fr) 70px 150px 90px 60px 60px minmax(220px,1.4fr) 300px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -54,7 +54,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .tab.active{color:var(--on-accent);background:var(--accent)}
   .tab.active:hover{background:var(--accent-press)}
 
-  main{padding:var(--s6);max-width:1680px;margin:0 auto}
+  main{padding:var(--s6);max-width:1500px;margin:0 auto}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
     padding:var(--s6);margin-bottom:var(--s4)}
@@ -109,8 +109,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .cfg:hover{border-color:var(--line2)}
   .cfg .name{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-  .cfg .cell{color:var(--text);font-family:var(--mono);font-size:13px}
-  .cfg .obj .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Objective and Status are both "a pill in a field" - .obj is just .field
+     plus overflow handling for long text, so their pills always share the
+     same box model and sit on the same baseline instead of drifting.
+     (Named .field, not .cell, to avoid colliding with the World Builder's
+     unrelated #grid .cell tile class - that collision was silently forcing
+     these down to a 22px tile size.) */
+  .cfg .field{color:var(--text);font-family:var(--mono);font-size:13px;display:flex;align-items:center}
+  .cfg .obj .pill{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cfg .models{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;align-self:start;
     overflow-y:auto;max-height:72px;                  /* ~3 rows visible; scroll for the rest */
     padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
@@ -388,11 +394,11 @@ async function loadConfigs(){
       <div>Models</div><div>Actions</div>
     </div>`+r.configs.map(c=>`<div class="cfg">
     <div class="name">${c.name||'(unnamed)'}</div>
-    <div class="cell">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
-    <div class="obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
-    <div class="cell">${configStatus(c)}</div>
-    <div class="cell">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
-    <div class="cell">${c.turns!=null?c.turns:'\u2014'}</div>
+    <div class="field">${c.size?c.size.join('\u00d7'):'\u2014'}</div>
+    <div class="field obj">${c.objective?`<span class="pill accent">${c.objective}</span>`:'\u2014'}</div>
+    <div class="field">${configStatus(c)}</div>
+    <div class="field">${c.trials!=null?(c.trials_done??0)+'/'+c.trials:'\u2014'}</div>
+    <div class="field">${c.turns!=null?c.turns:'\u2014'}</div>
     <div class="models" title="${(c.models||[]).join(', ')}">${(c.models||[]).map(modelPill).join('')||'<span class="muted">\u2014</span>'}</div>
     <div class="actions">
       <button class="btn-secondary btn-sm" onclick='dupConfig(${JSON.stringify(c.path)})'>Duplicate</button>
