@@ -217,6 +217,11 @@ class Handler(BaseHTTPRequestHandler):
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "image/png")
                 return self._send(404, {"error": "not found"})
+            if p == "/api/video":
+                fp = RUNS_DIR / q["run"][0] / "videos" / q["file"][0]
+                if fp.exists():
+                    return self._send(200, fp.read_bytes(), "video/mp4")
+                return self._send(404, {"error": "not found"})
             if p == "/api/run/status":
                 return self._send(200, STUDIO.status())
             if p == "/api/run/frame.png":
@@ -407,7 +412,9 @@ class Handler(BaseHTTPRequestHandler):
                     continue
                 plots = d / "plots"
                 files = [f.name for f in sorted(plots.glob("*.png"))] if plots.exists() else []
-                out.append({"name": d.name, "plots": files})
+                videos = d / "videos"
+                clips = [f.name for f in sorted(videos.glob("*.mp4"))] if videos.exists() else []
+                out.append({"name": d.name, "plots": files, "videos": clips})
         return out
 
     def _preview(self, world: dict):

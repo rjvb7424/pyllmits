@@ -51,12 +51,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .tab{appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
     font:500 14px var(--ui);padding:var(--s2) var(--s3);border-radius:var(--radius);min-height:36px}
   .tab:hover{color:var(--text);background:var(--raised)}
-  .tab.active{color:var(--text);background:var(--raised);box-shadow:inset 0 -2px 0 var(--accent)}
-  .statusdot{margin-left:auto;display:flex;align-items:center;gap:var(--s2);color:var(--muted);font-size:13px}
-  .statusdot i{width:8px;height:8px;border-radius:50%;background:var(--faint);display:inline-block}
-  .statusdot.live i{background:var(--ok);box-shadow:0 0 0 3px rgba(63,178,127,.2)}
-  .statusdot.paused i{background:var(--accent)}
-  .statusdot.err i{background:var(--danger)}
+  .tab.active{color:var(--on-accent);background:var(--accent)}
+  .tab.active:hover{background:var(--accent-press)}
 
   main{padding:var(--s6);max-width:1360px;margin:0 auto}
 
@@ -161,7 +157,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     .cfg .actions{justify-content:flex-start}
     .cfg .actions .btn-primary{flex:1}
   }
-  @media (max-width:400px){ .statusdot span{display:none} }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -172,8 +167,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab active" data-tab="configs" role="tab">Configs</button>
     <button class="tab" data-tab="run" role="tab">Run</button>
     <button class="tab" data-tab="graphs" role="tab">Graphs</button>
+    <button class="tab" data-tab="videos" role="tab">Videos</button>
   </nav>
-  <div class="statusdot" id="statusDot"><i></i><span id="statusText">idle</span></div>
 </header>
 
 <main>
@@ -300,6 +295,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
     <div id="plots"></div>
   </section>
+
+  <!-- VIDEOS -->
+  <section id="tab-videos" class="hidden">
+    <div class="between" style="margin-bottom:var(--s4)">
+      <div><h2>Videos</h2><div class="sub">Recorded trial videos for a completed run, per model.</div></div>
+      <div class="flex">
+        <select id="vidPick" onchange="showVideos()" style="min-width:240px" aria-label="Pick a run"></select>
+      </div>
+    </div>
+    <div id="videosList"></div>
+  </section>
 </main>
 <div id="toasts" aria-live="polite"></div>
 
@@ -310,13 +316,9 @@ const api=(u,m,b)=>fetch(u,{method:m||'GET',headers:{'Content-Type':'application
   body:b?JSON.stringify(b):undefined}).then(r=>r.json());
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');
   t.textContent=msg;$('toasts').appendChild(t);setTimeout(()=>t.remove(),3200);}
-function setStatus(state){const d=$('statusDot');d.className='statusdot'+
-  (['running','finished'].includes(state)?' live':state=='paused'?' paused':state=='error'?' err':'');
-  $('statusText').textContent=state||'idle';}
-
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
-  ['configs','editor','run','graphs'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
-  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='run')loadRunConfigs();}
+  ['configs','editor','run','graphs','videos'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
+  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();}
 document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>go(x.dataset.tab));
 
 function defaultConfig(){return {
@@ -526,12 +528,12 @@ function pickRunConfig(path){RUNPATH=path||null;
 function selectRun(path){RUNPATH=path;go('run');
   $('liveView').src='about:blank';$('liveHint').style.display='';}
 async function runGo(){if(!RUNPATH){toast('Pick a config to run first','err');return;}
-  setStatus('running');const r=await api('/api/run/start','POST',{path:RUNPATH});
-  if(!r.ok){toast(r.error,'err');setStatus('error');return;}
+  const r=await api('/api/run/start','POST',{path:RUNPATH});
+  if(!r.ok){toast(r.error,'err');return;}
   if(r.live_url){$('liveView').src=r.live_url;$('liveHint').style.display='none';}
   toast('Experiment started','ok');startPolling();}
-function runPause(){api('/api/run/pause','POST');setStatus('paused');}
-function runResume(){api('/api/run/resume','POST');setStatus('running');}
+function runPause(){api('/api/run/pause','POST');}
+function runResume(){api('/api/run/resume','POST');}
 function runStop(){api('/api/run/stop','POST');toast('Stopping\u2026');}
 async function runRestart(){await api('/api/run/stop','POST');
   let tries=0;const wait=setInterval(async()=>{const s=await api('/api/run/status');
@@ -540,7 +542,7 @@ async function runCancel(){await api('/api/run/stop','POST');
   if(poll)clearInterval(poll);$('liveView').src='about:blank';go('configs');}
 function startPolling(){if(poll)clearInterval(poll);poll=setInterval(async()=>{
   const s=await api('/api/run/status');
-  $('st_state').textContent=s.state||'idle'; setStatus(s.state);
+  $('st_state').textContent=s.state||'idle';
   $('st_detail').textContent=s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
   if(s.live_url&&$('liveView').src==='about:blank'){$('liveView').src=s.live_url;$('liveHint').style.display='none';}
   if(['finished','stopped','error'].includes(s.state)&&!s.running){clearInterval(poll);
@@ -556,10 +558,13 @@ async function analyzeAfterRun(name){
   }
 }
 
-// ---------- Graphs ----------
+// ---------- Graphs / Videos ----------
 async function loadRuns(){const r=await api('/api/runs');
-  $('runPick').innerHTML='<option value="">-- pick a run --</option>'+
+  const opts='<option value="">-- pick a run --</option>'+
     r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
+  const prevRun=$('runPick').value, prevVid=$('vidPick').value;
+  $('runPick').innerHTML=opts; $('vidPick').innerHTML=opts;
+  $('runPick').value=prevRun; $('vidPick').value=prevVid;
   window._runs=r.runs;}
 function showRun(){const name=$('runPick').value;const run=(window._runs||[]).find(r=>r.name==name);const bust=Date.now();
   if(!name){$('plots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
@@ -571,6 +576,11 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
+function showVideos(){const name=$('vidPick').value;const run=(window._runs||[]).find(r=>r.name==name);
+  if(!name){$('videosList').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its videos.</div>';return;}
+  if(!run||!run.videos.length){$('videosList').innerHTML='<div class="empty"><b>No videos yet</b>Run this config with record_video enabled.</div>';return;}
+  $('videosList').innerHTML=run.videos.map(f=>`<div><div class="muted mono" style="font-size:12px;margin-bottom:4px">${f}</div>
+    <video class="plot" controls preload="metadata" src="/api/video?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}"></video></div>`).join('');}
 
 // ---------- boot ----------
 (async()=>{META=await api('/api/meta');renderPalette();loadConfigs();})();
