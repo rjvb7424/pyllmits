@@ -132,7 +132,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .empty{text-align:center;color:var(--muted);padding:var(--s12) var(--s4);border:1px dashed var(--line2);border-radius:var(--radius-lg)}
   .empty b{color:var(--text);display:block;margin-bottom:var(--s2);font-size:16px}
 
-  .grid-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#0b0d11;padding:var(--s3);max-height:70vh}
+  .grid-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#0b0d11;padding:var(--s3);
+    max-height:70vh;display:flex;justify-content:center}
   #grid{display:grid;gap:1px;width:max-content}
   .cell{width:22px;height:22px;border-radius:3px;cursor:pointer;outline-offset:-2px}
   .cell:hover{box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
@@ -201,16 +202,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div><h2>Editor</h2><div class="sub"><span class="pill" id="edPath">unsaved</span></div></div>
       <div class="flex">
         <button class="btn-secondary" onclick="go('configs')">Cancel</button>
-        <button class="btn-danger hidden" id="edDelete" onclick="deleteCurrentConfig()">Delete</button>
         <button class="btn-primary" onclick="saveConfig()">Save config</button>
+        <button class="btn-danger hidden" id="edDelete" onclick="deleteCurrentConfig()">Delete</button>
       </div>
     </div>
 
     <div class="card"><h3>Experiment</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">Basic run settings - trials, turn limit, and video recording.</div>
       <div class="row">
-        <div><label for="e_name">Name</label><input id="e_name">
-          <div class="sub" style="margin-top:4px">This is also the config's file name (and run folder) - letters, numbers, underscores and hyphens only.</div>
-        </div>
+        <div><label for="e_name">Name</label><input id="e_name"></div>
         <div><label for="e_trials">Trials</label><input id="e_trials" type="number" min="1"></div>
         <div><label for="e_turns">Max turns</label><input id="e_turns" type="number" min="1"></div>
         <div><label for="e_seed">Seed</label><input id="e_seed" type="number"></div>
@@ -224,6 +224,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div class="card"><h3>Objective</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">What counts as success in this world.</div>
       <div class="row">
         <div><label for="o_type">Type</label><select id="o_type"><option>achievement</option><option>inventory</option></select></div>
         <div><label for="o_target">Target</label><select id="o_target"></select></div>
@@ -243,19 +244,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <label>Palette</label>
       <div id="palette"></div>
       <div class="grid-wrap"><div id="grid"></div></div>
-      <div class="flex" style="margin-top:var(--s3)">
-        <button class="btn-secondary btn-sm" onclick="clearGrid()">Clear</button>
-        <button class="btn-secondary btn-sm" onclick="previewWorld()">Preview (engine)</button>
-      </div>
-      <pre id="previewOut" class="hidden" style="margin-top:var(--s3)"></pre>
     </div>
 
     <div class="card"><h3>Models</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">The models being evaluated - each one runs independently through every trial.</div>
       <div id="models"></div>
       <button class="btn-secondary btn-sm" onclick="addModel()">+ Add model</button>
     </div>
 
     <div class="card"><h3>Prompt</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">What the model sees each turn: the system instructions and the per-turn state.</div>
       <div class="flex" style="margin-bottom:var(--s2)">
         <label class="check"><input type="checkbox" id="p_leg"> legend</label>
         <label class="check"><input type="checkbox" id="p_inv"> inventory</label>
@@ -264,10 +262,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </div>
       <label for="p_sys">System</label><textarea id="p_sys"></textarea>
       <label for="p_user">User</label><textarea id="p_user"></textarea>
-      <div class="row" style="max-width:420px">
-        <div><label for="a_strat">Parse strategy</label><input id="a_strat"></div>
-        <div><label for="a_fall">Fallback action</label><input id="a_fall"></div>
-      </div>
     </div>
   </section>
 
@@ -449,7 +443,6 @@ function formFromCfg(){const c=CFG;
   $('p_leg').checked=c.prompt.include_legend; $('p_inv').checked=c.prompt.include_inventory;
   $('p_ach').checked=c.prompt.include_achievements; $('p_act').checked=c.prompt.include_action_list;
   $('p_sys').value=c.prompt.system||''; $('p_user').value=c.prompt.user||'';
-  $('a_strat').value=c.actions.strategy||'keyword'; $('a_fall').value=c.actions.fallback||'noop';
   worldToGrid(); renderModels();
 }
 function fillSelect(sel,opts,val){sel.innerHTML=opts.map(o=>`<option ${o==val?'selected':''}>${o}</option>`).join('');}
@@ -465,7 +458,6 @@ function cfgFromForm(){const c=CFG;
   c.prompt.include_legend=$('p_leg').checked; c.prompt.include_inventory=$('p_inv').checked;
   c.prompt.include_achievements=$('p_ach').checked; c.prompt.include_action_list=$('p_act').checked;
   c.prompt.system=$('p_sys').value; c.prompt.user=$('p_user').value;
-  c.actions.strategy=$('a_strat').value; c.actions.fallback=$('a_fall').value;
   gridToWorld(); modelsFromForm();
   return c;
 }
@@ -502,7 +494,6 @@ function applyPaint(x,y){const info=paletteInfo(SEL);
     for(let j=0;j<GRID.length;j++)for(let i=0;i<GRID[0].length;i++)
       if(GRID[j][i]=='player')setCell(i,j,'grass');}
   setCell(x,y,SEL);}
-function clearGrid(){GRID=blankGrid(W(),H());renderGrid();}
 function resizeGrid(){const w=W(),h=H();const ng=blankGrid(w,h);
   for(let y=0;y<Math.min(h,GRID.length);y++)for(let x=0;x<Math.min(w,GRID[0]?.length||0);x++)ng[y][x]=GRID[y][x];
   GRID=ng;renderGrid();}
@@ -525,9 +516,6 @@ function gridToWorld(){const c=CFG.world;c.size=[W(),H()];c.base_terrain='grass'
   }
   c.features=feats;c.entities=ents;c.player_start=player||[0,0];
 }
-async function previewWorld(){gridToWorld();const r=await api('/api/preview','POST',{world:CFG.world});
-  const o=$('previewOut');o.classList.remove('hidden');o.textContent=r.ok?r.map:('Error: '+r.error);
-  if(!r.ok)toast('Preview error: '+r.error,'err');}
 
 // ---------- Models ----------
 function presetsFor(backend){return (META.model_presets&&META.model_presets[backend])||[];}
@@ -540,7 +528,7 @@ function modelOptions(m){
 function pickModel(i,v){
   if(v=='__custom__'){const c=prompt('Enter model id:',CFG.models[i].name||'');
     if(c)CFG.models[i].name=c; renderModels(); return;}
-  CFG.models[i].name=v;
+  CFG.models[i].name=v; renderModels();
 }
 function renderModels(){$('models').innerHTML=(CFG.models||[]).map((m,i)=>`
   <div class="model">

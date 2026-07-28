@@ -271,8 +271,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "path": str(dst)})
             if p == "/api/analyze":
                 return self._send(200, self._regen_graphs(self._body()["run"]))
-            if p == "/api/preview":
-                return self._send(200, self._preview(self._body().get("world", {})))
             if p == "/api/run/start":
                 return self._send(200, STUDIO.start_run(self._body()["path"]))
             if p == "/api/run/pause":
@@ -504,21 +502,6 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that experiment is currently running - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
-
-    def _preview(self, world: dict):
-        """Render the world to an ASCII map via the real engine for accuracy."""
-        try:
-            from config import WorldCfg
-            from world import CustomCrafterEnv
-            import observation as obs
-            wc = WorldCfg.from_dict(world)
-            env = CustomCrafterEnv(wc, seed=0)
-            env.set_world_seed(0)
-            env.reset()
-            return {"ok": True, "map": obs.render_text_map(env.world, env.player),
-                    "size": list(wc.size)}
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
 
 
 # =============================================================================
