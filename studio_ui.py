@@ -542,8 +542,17 @@ function startPolling(){if(poll)clearInterval(poll);poll=setInterval(async()=>{
   $('st_detail').textContent=s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
   if(s.live_url&&$('liveView').src==='about:blank'){$('liveView').src=s.live_url;$('liveHint').style.display='none';}
   if(['finished','stopped','error'].includes(s.state)&&!s.running){clearInterval(poll);
-    if(s.state=='finished')toast('Run finished','ok');}
+    if(s.state=='finished'){toast('Run finished — generating graphs…','ok');
+      if(s.run_name)analyzeAfterRun(s.run_name);}}
 },700);}
+async function analyzeAfterRun(name){
+  const r=await api('/api/analyze','POST',{run:name});
+  if(!r.ok){toast('Graph generation failed: '+r.error,'err');return;}
+  toast('Graphs ready','ok');
+  if($('tab-graphs')&&!$('tab-graphs').classList.contains('hidden')){
+    await loadRuns(); $('runPick').value=name; showRun();
+  }
+}
 
 // ---------- Graphs ----------
 async function loadRuns(){const r=await api('/api/runs');

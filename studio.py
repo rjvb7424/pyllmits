@@ -113,6 +113,7 @@ class Studio:
         self.runner = None       # current ExperimentRunner (holds the live viewer)
         self.config_path = None
         self.live_url = None
+        self.run_name = None
 
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
@@ -126,6 +127,7 @@ class Studio:
         cfg = load_config(config_path)
         self.control = RunControl()
         self.config_path = config_path
+        self.run_name = cfg.experiment.name
 
         # Build the runner on this thread so its live viewer binds and we can
         # hand the URL to the browser to embed. The trials run in a worker.
@@ -157,6 +159,7 @@ class Studio:
         s = dict(self.control.status)
         s["running"] = self.is_running()
         s["live_url"] = self.live_url
+        s["run_name"] = self.run_name
         return s
 
 
@@ -333,11 +336,18 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     data = load_yaml(f)
                     exp = data.get("experiment", {})
+                    trials_done = self._trials_done(exp)
+                    total_trials = exp.get("num_trials")
+                    # If num_trials was lowered in the config after trials were
+                    # already recorded (e.g. 8 -> 4), results.json still holds
+                    # all 8 - show 8/8, not the nonsensical 8/4.
+                    if total_trials is not None and trials_done > total_trials:
+                        total_trials = trials_done
                     out.append({
                         "path": str(f),
                         "name": exp.get("name", f.stem),
-                        "trials": exp.get("num_trials"),
-                        "trials_done": self._trials_done(exp),
+                        "trials": total_trials,
+                        "trials_done": trials_done,
                         "turns": exp.get("max_turns"),
                         "size": data.get("world", {}).get("size"),
                         "objective": data.get("objective", {}).get("target"),
