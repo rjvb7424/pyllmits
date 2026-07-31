@@ -24,7 +24,7 @@ viewer.html           interactive replay: state + prompt + response + timing
 ## Install
 
 ```
-pip install -r requirements.txt
+pip install -e .
 ```
 
 `torch`, `transformers`, `accelerate` are only needed for the `huggingface`
@@ -140,7 +140,7 @@ experiment:
   video_fps: 4
 ```
 
-Needs `imageio-ffmpeg` (in requirements.txt) - it bundles ffmpeg, so there is no
+Needs `imageio-ffmpeg` (a package dependency) - it bundles ffmpeg, so there is no
 system install.
 
 ## Watching it run live

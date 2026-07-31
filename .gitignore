@@ -1,7 +1,8 @@
 __pycache__
 .venv
 .env
-//claude//
+.claude/
+.DS_Store
 *.egg-info/
 /dist/
 /build/
