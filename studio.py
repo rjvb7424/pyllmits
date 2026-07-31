@@ -421,15 +421,15 @@ class Handler(BaseHTTPRequestHandler):
         ar.plot_think_time(rows, plots / "think_time.png", name)
         ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
         ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
-        asc.plot_accuracy_by_family(results, plots / "accuracy_by_family.png", name)
         asc.plot_success_rate_confidence_intervals(
             results, plots / "success_rate_confidence_intervals.png", name
         )
         # No longer generated (dropped from the Graphs page) - remove any
-        # stale copy left over from before so it doesn't keep showing up.
-        stale = plots / "param_count_vs_accuracy.png"
-        if stale.exists():
-            stale.unlink()
+        # stale copies left over from before so they don't keep showing up.
+        for stale_name in ("param_count_vs_accuracy.png", "accuracy_by_family.png"):
+            stale = plots / stale_name
+            if stale.exists():
+                stale.unlink()
         return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
 
     def _run_dir_for_config(self, exp: dict) -> Path | None:

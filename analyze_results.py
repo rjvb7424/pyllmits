@@ -97,9 +97,10 @@ def plot_success_rate(rows, out, experiment_name):
         else:
             ax.text(i, values[i] + 1, f"{values[i]:.0f}%",
                     ha="center", va="bottom", fontsize=9)
-    ax.set_ylabel("Success rate (%)")
+    ax.set_xlabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Success rate (% of trials solved)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylim(0, 105)
-    ax.set_title(f"Success rate of {experiment_name}")
+    ax.set_title(f"Success rate of {experiment_name} experiment", fontsize=13, pad=28)
     _finish(fig, ax, out)
 
 

@@ -118,7 +118,6 @@ def main() -> None:
         analyze_results.plot_think_time(rows, cfg.plots_dir / "think_time.png", name)
         analyze_results.plot_success_matrix(rows, cfg.plots_dir / "success_matrix.png", name)
         analyze_results.plot_tokens_vs_turns(results, cfg.plots_dir / "token_usage.png", name)
-        analyze_scaling.plot_accuracy_by_family(results, cfg.plots_dir / "accuracy_by_family.png", name)
         analyze_scaling.plot_success_rate_confidence_intervals(
             results, cfg.plots_dir / "success_rate_confidence_intervals.png", name
         )
