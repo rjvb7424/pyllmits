@@ -7,11 +7,12 @@ achieved the objective. The experiment name appears in every title (underscores
 shown as spaces). Plots are written to <run_dir>/plots/:
 
   * success_rate.png      - fraction of trials solved, per model
-  * turns_to_success.png  - turns needed when solved
   * think_time.png        - mean seconds per decision, per model
-  * success_matrix.png    - model x trial grid
-  * token_usage.png       - tokens vs turns per trial, coloured by model,
-                            circle = solved, x = failed
+  * success_matrix.png    - model x trial grid, solved/failed/not run
+  * turns_to_solve.png    - model x trial grid, turns taken on solved trials
+  * turns_to_fail.png     - model x trial grid, turns taken on failed trials
+  * tokens_to_solve.png   - model x trial grid, tokens used on solved trials
+  * tokens_to_fail.png    - model x trial grid, tokens used on failed trials
 """
 
 from __future__ import annotations
@@ -104,24 +105,6 @@ def plot_success_rate(rows, out, experiment_name):
     _finish(fig, ax, out)
 
 
-def plot_turns_to_success(rows, out, experiment_name):
-    names = [r["name"] for r in rows]
-    means = [r["mean_solve_turns"] if r["mean_solve_turns"] is not None else 0 for r in rows]
-    fig, ax = plt.subplots(figsize=(max(6, 1.6 * len(names)), 4.5))
-    ax.bar(names, means, color=BAR_COLOR, alpha=0.75)
-    for i, r in enumerate(rows):
-        st = r["solve_turns"]
-        if not st:
-            continue
-        rs = np.random.RandomState(i)
-        jitter = (rs.rand(len(st)) - 0.5) * 0.25
-        ax.scatter(np.full(len(st), i) + jitter, st, color=OK_COLOR, s=28,
-                   zorder=3, edgecolor="white", linewidth=0.5)
-    ax.set_ylabel("Turns to reach the goal")
-    ax.set_title(f"Turns to success of {experiment_name}\n(bar = mean, dots = successful trials)")
-    _finish(fig, ax, out)
-
-
 def plot_think_time(rows, out, experiment_name):
     names = [r["name"] for r in rows]
     means = [r["mean_think"] if r["mean_think"] is not None else 0 for r in rows]
@@ -172,58 +155,141 @@ def plot_success_matrix(rows, out, experiment_name):
     plt.close(fig)
 
 
-def collect_token_points(results):
-    """One point per trial: model, turns_used, total_tokens, success.
-    Returns (points, any_tokens); any_tokens is False for runs with no token data."""
-    points = []
-    any_tokens = False
+def collect_trial_details(results):
+    """Per-model list of per-trial stats: whether it solved, how many turns it
+    took, and how many tokens it used (None if that trial has no token data).
+
+    "turns_used" is the same convention as summarise()'s solve_turns: for a
+    solved trial it's turns up to and including the solving turn; for a failed
+    trial it's every turn the trial ran.
+    """
+    details: dict[str, list[dict[str, Any]]] = {}
     for name, record in results.get("models", {}).items():
-        for trial in record.get("trials", []):
-            tt = [int(t["tokens"]) for t in trial.get("turns", []) if t.get("tokens") is not None]
-            if not tt:
-                continue
-            any_tokens = True
-            points.append({
-                "model": name,
-                "turns": len(trial.get("turns", [])),
-                "tokens": sum(tt),
-                "success": bool(trial.get("success", False)),
+        trials_out = []
+        for t in record.get("trials", []):
+            turns = t.get("turns", [])
+            success = bool(t.get("success", False))
+            if success and t.get("success_turn") is not None:
+                turns_used = int(t["success_turn"]) + 1
+            else:
+                turns_used = len(turns)
+            tok = [int(x["tokens"]) for x in turns if x.get("tokens") is not None]
+            trials_out.append({
+                "success": success,
+                "turns_used": turns_used,
+                "tokens_used": sum(tok) if tok else None,
             })
-    return points, any_tokens
+        details[name] = trials_out
+    return details
 
 
-def plot_tokens_vs_turns(results, out, experiment_name):
-    """Scatter: x = turns in a trial, y = total tokens that trial used.
-    Colour = model; circle = solved, x = failed."""
-    points, any_tokens = collect_token_points(results)
-    fig, ax = plt.subplots(figsize=(8, 5.5))
-    if not any_tokens:
-        ax.text(0.5, 0.5,
-                "No token data in this run.\n"
-                "Token usage is recorded from now on - run again to populate.",
-                ha="center", va="center", fontsize=11, color="#555555")
+def _sequential_cmap(colour):
+    return matplotlib.colors.LinearSegmentedColormap.from_list("seq", ["#ffffff", colour])
+
+
+def _plot_trial_grid(details, num_trials, out, *, value_key, keep_success,
+                      title, subtitle, cbar_label, colour, value_fmt, empty_message):
+    """Model x trial grid, one cell per trial that matches keep_success,
+    coloured and annotated by value_key. Mirrors plot_success_matrix's grid
+    layout so every per-trial plot in this module reads the same way."""
+    names = list(details.keys())
+    recorded = max((len(v) for v in details.values()), default=1)
+    n_cols = max(int(num_trials), recorded, 1)
+    grid = np.full((len(names), n_cols), np.nan)
+    for mi, name in enumerate(names):
+        for ti, trial in enumerate(details[name]):
+            if ti >= n_cols or trial["success"] != keep_success:
+                continue
+            v = trial[value_key]
+            if v is not None:
+                grid[mi, ti] = v
+
+    fig, ax = plt.subplots(figsize=(max(6, 0.8 * n_cols + 3), max(3, 0.7 * len(names) + 2)))
+    if not np.isfinite(grid).any():
+        ax.text(0.5, 0.5, empty_message, ha="center", va="center",
+                fontsize=11, color="#555555")
         ax.set_axis_off()
-        ax.set_title(f"Token usage of {experiment_name}")
+        ax.set_title(title, fontsize=13, pad=14)
         fig.tight_layout(); fig.savefig(out, dpi=130, bbox_inches="tight"); plt.close(fig)
         return
-    models = sorted({p["model"] for p in points})
-    cmap = plt.get_cmap("tab10" if len(models) <= 10 else "tab20")
-    colour_of = {m: cmap(i % cmap.N) for i, m in enumerate(models)}
-    for model in models:
-        for success, marker in ((True, "o"), (False, "X")):
-            xs = [p["turns"] for p in points if p["model"] == model and p["success"] == success]
-            ys = [p["tokens"] for p in points if p["model"] == model and p["success"] == success]
-            if not xs:
+
+    ax.set_facecolor(GRID_BG)
+    masked = np.ma.masked_invalid(grid)
+    im = ax.imshow(masked, cmap=_sequential_cmap(colour), aspect="auto")
+    ax.set_xticks(range(n_cols), [f"T{i + 1}" for i in range(n_cols)])
+    ax.set_yticks(range(len(names)), names)
+    vmax = float(np.nanmax(grid))
+    for mi in range(len(names)):
+        for ti in range(n_cols):
+            v = grid[mi, ti]
+            if np.isnan(v):
                 continue
-            ax.scatter(xs, ys, marker=marker, s=70, color=colour_of[model],
-                       edgecolor="white", linewidth=0.6, alpha=0.9,
-                       label=model if success else None, zorder=3)
-    ax.set_xlabel("Turns taken in the trial")
-    ax.set_ylabel("Total tokens used in the trial")
-    ax.set_title(f"Token usage of {experiment_name}\n(colour = model, circle = solved, x = failed)")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(title="model", fontsize=8, loc="best", framealpha=0.9)
-    fig.tight_layout(); fig.savefig(out, dpi=130, bbox_inches="tight"); plt.close(fig)
+            text_colour = "white" if vmax and v / vmax > 0.55 else "#222222"
+            ax.text(ti, mi, value_fmt(v), ha="center", va="center",
+                    color=text_colour, fontsize=10)
+    ax.set_xlabel("Trial (number of trials executed)", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.set_title(title, fontsize=13, pad=28)
+    ax.text(0.5, 1.07, subtitle, transform=ax.transAxes, ha="center", va="bottom",
+            fontsize=9.5, color=LABEL_GRAY)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label(cbar_label, color=LABEL_GRAY, fontsize=10)
+    cbar.ax.tick_params(colors=LABEL_GRAY, labelsize=8)
+    fig.tight_layout()
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_turns_to_solve(results, out, experiment_name):
+    """Model x trial grid: turns taken on trials that were solved."""
+    _plot_trial_grid(
+        collect_trial_details(results), results.get("num_trials", 0), out,
+        value_key="turns_used", keep_success=True,
+        title=f"Turns to solve of {experiment_name} experiment",
+        subtitle="blank = trial failed or wasn't run",
+        cbar_label="Turns", colour=OK_COLOR,
+        value_fmt=lambda v: f"{int(round(v))}",
+        empty_message="No solved trials in this run.",
+    )
+
+
+def plot_turns_to_fail(results, out, experiment_name):
+    """Model x trial grid: turns taken on trials that failed."""
+    _plot_trial_grid(
+        collect_trial_details(results), results.get("num_trials", 0), out,
+        value_key="turns_used", keep_success=False,
+        title=f"Turns to fail of {experiment_name} experiment",
+        subtitle="blank = trial solved or wasn't run",
+        cbar_label="Turns", colour=FAIL_COLOR,
+        value_fmt=lambda v: f"{int(round(v))}",
+        empty_message="No failed trials in this run.",
+    )
+
+
+def plot_tokens_to_solve(results, out, experiment_name):
+    """Model x trial grid: tokens used on trials that were solved."""
+    _plot_trial_grid(
+        collect_trial_details(results), results.get("num_trials", 0), out,
+        value_key="tokens_used", keep_success=True,
+        title=f"Tokens to solve of {experiment_name} experiment",
+        subtitle="blank = trial failed, wasn't run, or has no token data",
+        cbar_label="Tokens", colour=OK_COLOR,
+        value_fmt=lambda v: f"{int(round(v)):,}",
+        empty_message="No token data for solved trials in this run.",
+    )
+
+
+def plot_tokens_to_fail(results, out, experiment_name):
+    """Model x trial grid: tokens used on trials that failed."""
+    _plot_trial_grid(
+        collect_trial_details(results), results.get("num_trials", 0), out,
+        value_key="tokens_used", keep_success=False,
+        title=f"Tokens to fail of {experiment_name} experiment",
+        subtitle="blank = trial solved, wasn't run, or has no token data",
+        cbar_label="Tokens", colour=FAIL_COLOR,
+        value_fmt=lambda v: f"{int(round(v)):,}",
+        empty_message="No token data for failed trials in this run.",
+    )
 
 
 def _finish(fig, ax, out):
@@ -274,10 +340,12 @@ def main():
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     plot_success_rate(rows, plots_dir / "success_rate.png", experiment_name)
-    plot_turns_to_success(rows, plots_dir / "turns_to_success.png", experiment_name)
     plot_think_time(rows, plots_dir / "think_time.png", experiment_name)
     plot_success_matrix(rows, plots_dir / "success_matrix.png", experiment_name)
-    plot_tokens_vs_turns(results, plots_dir / "token_usage.png", experiment_name)
+    plot_turns_to_solve(results, plots_dir / "turns_to_solve.png", experiment_name)
+    plot_turns_to_fail(results, plots_dir / "turns_to_fail.png", experiment_name)
+    plot_tokens_to_solve(results, plots_dir / "tokens_to_solve.png", experiment_name)
+    plot_tokens_to_fail(results, plots_dir / "tokens_to_fail.png", experiment_name)
 
     print_summary(results, rows)
     print(f"Plots written to {plots_dir}/")

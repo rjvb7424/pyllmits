@@ -415,14 +415,17 @@ class Handler(BaseHTTPRequestHandler):
         plots = RUNS_DIR / run_name / "plots"
         plots.mkdir(parents=True, exist_ok=True)
         ar.plot_success_rate(rows, plots / "success_rate.png", name)
-        ar.plot_turns_to_success(rows, plots / "turns_to_success.png", name)
         ar.plot_think_time(rows, plots / "think_time.png", name)
         ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
-        ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
+        ar.plot_turns_to_solve(results, plots / "turns_to_solve.png", name)
+        ar.plot_turns_to_fail(results, plots / "turns_to_fail.png", name)
+        ar.plot_tokens_to_solve(results, plots / "tokens_to_solve.png", name)
+        ar.plot_tokens_to_fail(results, plots / "tokens_to_fail.png", name)
         # No longer generated (dropped from the Graphs page) - remove any
         # stale copies left over from before so they don't keep showing up.
         for stale_name in ("param_count_vs_accuracy.png", "accuracy_by_family.png",
-                           "success_rate_confidence_intervals.png"):
+                           "success_rate_confidence_intervals.png",
+                           "turns_to_success.png", "token_usage.png"):
             stale = plots / stale_name
             if stale.exists():
                 stale.unlink()

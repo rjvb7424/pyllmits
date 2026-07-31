@@ -113,10 +113,12 @@ def main() -> None:
         name = analyze_results.get_experiment_name(results, cfg.results_path)
         cfg.plots_dir.mkdir(parents=True, exist_ok=True)
         analyze_results.plot_success_rate(rows, cfg.plots_dir / "success_rate.png", name)
-        analyze_results.plot_turns_to_success(rows, cfg.plots_dir / "turns_to_success.png", name)
         analyze_results.plot_think_time(rows, cfg.plots_dir / "think_time.png", name)
         analyze_results.plot_success_matrix(rows, cfg.plots_dir / "success_matrix.png", name)
-        analyze_results.plot_tokens_vs_turns(results, cfg.plots_dir / "token_usage.png", name)
+        analyze_results.plot_turns_to_solve(results, cfg.plots_dir / "turns_to_solve.png", name)
+        analyze_results.plot_turns_to_fail(results, cfg.plots_dir / "turns_to_fail.png", name)
+        analyze_results.plot_tokens_to_solve(results, cfg.plots_dir / "tokens_to_solve.png", name)
+        analyze_results.plot_tokens_to_fail(results, cfg.plots_dir / "tokens_to_fail.png", name)
         analyze_results.print_summary(results, rows)
 
     if not args.skip_viewer:
