@@ -215,16 +215,21 @@ def _plot_trial_grid(details, num_trials, out, *, value_key, keep_success,
 
     ax.set_facecolor(GRID_BG)
     masked = np.ma.masked_invalid(grid)
-    im = ax.imshow(masked, cmap=_sequential_cmap(colour), aspect="auto")
+    vmin = float(np.nanmin(grid))
+    vmax = float(np.nanmax(grid))
+    im = ax.imshow(masked, cmap=_sequential_cmap(colour), aspect="auto", vmin=vmin, vmax=vmax)
     ax.set_xticks(range(n_cols), [f"T{i + 1}" for i in range(n_cols)])
     ax.set_yticks(range(len(names)), names)
-    vmax = float(np.nanmax(grid))
     for mi in range(len(names)):
         for ti in range(n_cols):
             v = grid[mi, ti]
             if np.isnan(v):
                 continue
-            text_colour = "white" if vmax and v / vmax > 0.55 else "#222222"
+            # Base the text colour on the same [vmin, vmax] normalisation the
+            # colormap itself uses - not on v/vmax - so a cell that happens to
+            # be the grid's minimum (rendered white) never gets white text.
+            norm = (v - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            text_colour = "white" if norm > 0.55 else "#222222"
             ax.text(ti, mi, value_fmt(v), ha="center", va="center",
                     color=text_colour, fontsize=10)
     ax.set_xlabel("Trial (number of trials executed)", color=LABEL_GRAY, fontsize=10)
