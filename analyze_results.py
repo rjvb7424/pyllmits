@@ -33,6 +33,7 @@ OK_COLOR = "#2f9e6f"
 FAIL_COLOR = "#c44e52"
 GRID_BG = "#e9e6df"
 NOT_RUN_COLOR = "#c9ccd6"
+LABEL_GRAY = "#8a8a8a"
 
 
 def get_experiment_name(results: dict[str, Any], results_path: Path | None = None) -> str:
@@ -159,7 +160,11 @@ def plot_success_matrix(rows, out, experiment_name):
                 continue
             ax.text(ti, mi, "\u2713" if v == 1.0 else "\u2717",
                     ha="center", va="center", color="white", fontsize=11)
-    ax.set_title(f"Success matrix of {experiment_name}\n(green = solved, red = failed, blank = not run)")
+    ax.set_xlabel("Trial", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Model", color=LABEL_GRAY, fontsize=10)
+    ax.set_title(f"Success matrix of {experiment_name}", fontsize=13, fontweight="bold", pad=28)
+    ax.text(0.5, 1.07, "green = solved, red = failed, blank = not run",
+            transform=ax.transAxes, ha="center", va="bottom", fontsize=9.5, color=LABEL_GRAY)
     fig.tight_layout()
     fig.savefig(out, dpi=130, bbox_inches="tight")
     plt.close(fig)

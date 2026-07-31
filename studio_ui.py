@@ -380,9 +380,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div><h2>Graphs</h2><div class="sub">Result plots for a completed run.</div></div>
       <div class="flex">
         <select id="runPick" onchange="showRun()" style="width:240px;text-overflow:ellipsis" aria-label="Pick a run"></select>
-        <button class="btn-danger" onclick="deleteRun('runPick')">Delete run</button>
         <button class="btn-primary" onclick="regenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
-        <button class="btn-secondary" id="downloadAllBtn" onclick="downloadAllGraphs()" disabled>&#8681;&nbsp;Download all</button>
+        <button class="btn-secondary" id="downloadAllBtn" onclick="downloadAllGraphs()" disabled>Download all</button>
       </div>
     </div>
     <div id="plots"></div>
@@ -808,7 +807,9 @@ function showRun(){const name=$('runPick').value;const run=(window._runs||[]).fi
   $('downloadAllBtn').disabled=!name;
   if(!name){$('plots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
   if(!run||!run.plots.length){$('plots').innerHTML='<div class="empty"><b>No plots yet</b>Run this config, or press Regenerate graphs.</div>';return;}
-  $('plots').innerHTML=run.plots.map(f=>`<div><div class="muted mono" style="font-size:12px;margin-bottom:4px">${f}</div>
+  // success_matrix leads the page - everything else keeps its existing order.
+  const files=run.plots.slice().sort((a,b)=>(a=='success_matrix.png')?-1:(b=='success_matrix.png')?1:0);
+  $('plots').innerHTML=files.map(f=>`<div>
     <img class="plot" alt="${f}" src="/api/plot?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}&_=${bust}"></div>`).join('');}
 async function regenGraphs(){const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}

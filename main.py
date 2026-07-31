@@ -111,7 +111,6 @@ def main() -> None:
         import analyze_scaling
         results = json.loads(cfg.results_path.read_text())
         rows = analyze_results.summarise(results)
-        scaling_rows = analyze_scaling.collect_model_rows(results)
         name = analyze_results.get_experiment_name(results, cfg.results_path)
         cfg.plots_dir.mkdir(parents=True, exist_ok=True)
         analyze_results.plot_success_rate(rows, cfg.plots_dir / "success_rate.png", name)
@@ -119,9 +118,6 @@ def main() -> None:
         analyze_results.plot_think_time(rows, cfg.plots_dir / "think_time.png", name)
         analyze_results.plot_success_matrix(rows, cfg.plots_dir / "success_matrix.png", name)
         analyze_results.plot_tokens_vs_turns(results, cfg.plots_dir / "token_usage.png", name)
-        analyze_scaling.plot_param_count_vs_accuracy(
-            scaling_rows, cfg.plots_dir / "param_count_vs_accuracy.png", name
-        )
         analyze_scaling.plot_accuracy_by_family(results, cfg.plots_dir / "accuracy_by_family.png", name)
         analyze_scaling.plot_success_rate_confidence_intervals(
             results, cfg.plots_dir / "success_rate_confidence_intervals.png", name

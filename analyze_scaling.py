@@ -6,8 +6,6 @@ Extra per-experiment plots, on top of the ones in analyze_results.py. Reads a
 single run's results.json and writes plots that compare the models tested
 *within that experiment* against each other:
 
-  * param_count_vs_accuracy.png           - open-weight parameter count (log)
-                                             vs accuracy, one point per model
   * accuracy_by_family.png                - per-family distribution of this
                                              experiment's per-trial accuracy
                                              (box + strip), to compare within-
@@ -33,31 +31,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from analyze_results import BAR_COLOR, get_experiment_name, resolve_results_path
-
-# =============================================================================
-#  Open-weight parameter counts (billions of parameters)
-#
-#  TODO: verify every one of these against the model's official model card
-#  before using this plot in the paper. Figures for MoE models are TOTAL
-#  parameters (not active-per-token) unless noted - that distinction matters
-#  for a "parameter count vs accuracy" comparison. Entries left as `None`
-#  are ones we don't have a confidently-sourced figure for; fill those in
-#  rather than guessing, or the scatter plot will just skip them.
-# =============================================================================
-MODEL_PARAM_COUNTS: dict[str, float | None] = {
-    "microsoft/phi-4":                      14.0,   # dense
-    "meta-llama/Llama-3.3-70B-Instruct":    70.0,   # dense
-    "Qwen/Qwen3-235B-A22B-Instruct-2507":  235.0,   # MoE, total (22B active)
-    "openai/gpt-oss-120b":                 120.0,   # MoE, total (~5.1B active)
-    "deepseek-ai/DeepSeek-R1":             671.0,   # MoE, total (37B active)
-    "deepseek-ai/DeepSeek-V3.2":           None,    # unverified - fill in
-    "deepseek-ai/DeepSeek-V4-Pro":         None,    # unverified - fill in
-    "deepseek-ai/DeepSeek-V4-Flash":       None,    # unverified - fill in
-}
-
-# Backends whose weights are open (self-hosted or hosted-open); everything
-# else (openai, gemini) is closed-weight and excluded from the scatter plot.
-OPEN_WEIGHT_BACKENDS = {"huggingface-api", "huggingface"}
 
 # =============================================================================
 #  Model family grouping - edit/extend as new models are tested
@@ -138,69 +111,7 @@ def wilson_score_interval(successes: int, n: int, z: float = WILSON_Z_95) -> tup
 
 
 # =============================================================================
-#  Plot 1: parameter count vs accuracy (open-weight models in this experiment)
-# =============================================================================
-def plot_param_count_vs_accuracy(rows: list[dict[str, Any]], out: Path, experiment_name: str) -> None:
-    points = [
-        r for r in rows
-        if r["backend"] in OPEN_WEIGHT_BACKENDS
-        and MODEL_PARAM_COUNTS.get(r["model"]) is not None
-    ]
-
-    fig, ax = plt.subplots(figsize=(7.5, 5.5))
-    if not points:
-        ax.text(0.5, 0.5,
-                "No open-weight models with a known parameter count in this run.\n"
-                "Fill in MODEL_PARAM_COUNTS at the top of analyze_scaling.py.",
-                ha="center", va="center", fontsize=11, color="#555555")
-        ax.set_axis_off()
-        ax.set_title(f"Parameter count vs accuracy of {experiment_name}")
-        fig.tight_layout(); fig.savefig(out, dpi=130, bbox_inches="tight"); plt.close(fig)
-        return
-
-    families = sorted({resolve_family(p["model"]) for p in points})
-    cmap = plt.get_cmap("tab10" if len(families) <= 10 else "tab20")
-    colour_of = {f: cmap(i % cmap.N) for i, f in enumerate(families)}
-
-    # Two different models can share the same declared parameter count (or
-    # round to the same accuracy) and would otherwise stack on top of each
-    # other, labels included. Fan out same-coordinate points symmetrically -
-    # deterministic, so the figure is reproducible.
-    clusters: dict[tuple[float, float], list[dict[str, Any]]] = {}
-    for p in sorted(points, key=lambda p: p["model"]):
-        key = (MODEL_PARAM_COUNTS[p["model"]], round(p["accuracy_pct"], 1))
-        clusters.setdefault(key, []).append(p)
-
-    for family in families:
-        subset = [p for p in points if resolve_family(p["model"]) == family]
-        xs, ys, labels, label_offsets = [], [], [], []
-        for p in subset:
-            key = (MODEL_PARAM_COUNTS[p["model"]], round(p["accuracy_pct"], 1))
-            cluster = clusters[key]
-            slot = cluster.index(p)
-            spread = (slot - (len(cluster) - 1) / 2) * 0.05
-            xs.append(key[0] * (1 + spread))
-            ys.append(p["accuracy_pct"])
-            labels.append(p["model"].split("/")[-1])
-            label_offsets.append(4 + 11 * slot)
-        ax.scatter(xs, ys, color=colour_of[family], s=80, edgecolor="white",
-                   linewidth=0.6, alpha=0.9, label=family, zorder=3)
-        for x, y, label, dy in zip(xs, ys, labels, label_offsets):
-            ax.annotate(label, (x, y), fontsize=7, color="#555555",
-                        xytext=(4, dy), textcoords="offset points")
-
-    ax.set_xscale("log")
-    ax.set_xlabel("Parameter count (billions, log scale)")
-    ax.set_ylabel("Accuracy (%)")
-    ax.set_ylim(-5, 105)
-    ax.set_title(f"Parameter count vs accuracy of {experiment_name}\n(open-weight models only)")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(title="family", fontsize=8, loc="best", framealpha=0.9)
-    fig.tight_layout(); fig.savefig(out, dpi=130, bbox_inches="tight"); plt.close(fig)
-
-
-# =============================================================================
-#  Plot 2: accuracy by model family (box + strip)
+#  Plot 1: accuracy by model family (box + strip)
 # =============================================================================
 def plot_accuracy_by_family(results: dict[str, Any], out: Path, experiment_name: str) -> None:
     # Per-trial (not per-model) success values: with usually one model per
@@ -253,7 +164,7 @@ def plot_accuracy_by_family(results: dict[str, Any], out: Path, experiment_name:
 
 
 # =============================================================================
-#  Plot 3: success rate with Wilson confidence intervals
+#  Plot 2: success rate with Wilson confidence intervals
 # =============================================================================
 def plot_success_rate_confidence_intervals(results: dict[str, Any], out: Path, experiment_name: str) -> None:
     names, rates, lower_err, upper_err, n_labels = [], [], [], [], []
@@ -310,24 +221,13 @@ def main() -> None:
         print(f"Note: these models aren't in FAMILY_MAP and were grouped under "
               f"'{UNMAPPED_FAMILY}': {', '.join(unmapped)}")
 
-    missing_param_counts = sorted({
-        r["model"] for r in rows
-        if r["backend"] in OPEN_WEIGHT_BACKENDS and MODEL_PARAM_COUNTS.get(r["model"]) is None
-    })
-    if missing_param_counts:
-        print(f"Note: these open-weight models have no verified parameter count in "
-              f"MODEL_PARAM_COUNTS and were skipped from the scatter plot: "
-              f"{', '.join(missing_param_counts)}")
-
     plots_dir = results_path.parent / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     output_paths = {
-        "Parameter count vs accuracy": plots_dir / "param_count_vs_accuracy.png",
         "Accuracy by model family": plots_dir / "accuracy_by_family.png",
         "Success rate with Wilson CIs": plots_dir / "success_rate_confidence_intervals.png",
     }
 
-    plot_param_count_vs_accuracy(rows, output_paths["Parameter count vs accuracy"], experiment_name)
     plot_accuracy_by_family(results, output_paths["Accuracy by model family"], experiment_name)
     plot_success_rate_confidence_intervals(results, output_paths["Success rate with Wilson CIs"], experiment_name)
 
