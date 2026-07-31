@@ -214,8 +214,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   #lvState,#lvResponse,#lvPrompt{white-space:pre-wrap;word-break:break-word;max-height:40vh}
   @media (max-width:900px){.live-grid{grid-template-columns:1fr}}
 
-  .plot{max-width:100%;border:1px solid var(--line);border-radius:var(--radius);margin:var(--s2) 0;background:#fff;display:block}
-  #plots>div{margin-bottom:var(--s4)}
+  .plot{max-width:100%;border:1px solid var(--line);border-radius:var(--radius);margin:var(--s2) auto;background:#fff;display:block}
+  #plots{display:flex;flex-direction:column;align-items:center}
+  #plots>div{margin-bottom:var(--s4);text-align:center}
+  #plots>.empty{align-self:stretch}
+  button:disabled{opacity:.45;cursor:not-allowed}
 
   #toasts{position:fixed;right:var(--s6);bottom:var(--s6);z-index:50;display:flex;flex-direction:column;gap:var(--s2)}
   .toast{background:var(--raised);border:1px solid var(--line2);border-left:3px solid var(--accent);
@@ -379,6 +382,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <select id="runPick" onchange="showRun()" style="width:240px;text-overflow:ellipsis" aria-label="Pick a run"></select>
         <button class="btn-danger" onclick="deleteRun('runPick')">Delete run</button>
         <button class="btn-primary" onclick="regenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
+        <button class="btn-secondary" id="downloadAllBtn" onclick="downloadAllGraphs()" disabled>&#8681;&nbsp;Download all</button>
       </div>
     </div>
     <div id="plots"></div>
@@ -798,8 +802,10 @@ async function loadRuns(){const r=await api('/api/runs');
   const prevRun=$('runPick').value, prevVid=$('vidPick').value;
   $('runPick').innerHTML=opts; $('vidPick').innerHTML=opts;
   $('runPick').value=prevRun; $('vidPick').value=prevVid;
+  $('downloadAllBtn').disabled=!$('runPick').value;
   window._runs=r.runs;}
 function showRun(){const name=$('runPick').value;const run=(window._runs||[]).find(r=>r.name==name);const bust=Date.now();
+  $('downloadAllBtn').disabled=!name;
   if(!name){$('plots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
   if(!run||!run.plots.length){$('plots').innerHTML='<div class="empty"><b>No plots yet</b>Run this config, or press Regenerate graphs.</div>';return;}
   $('plots').innerHTML=run.plots.map(f=>`<div><div class="muted mono" style="font-size:12px;margin-bottom:4px">${f}</div>
@@ -809,6 +815,35 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
+// Download-all: regenerate the graphs so the zip is current, download every
+// plot as one zip, then delete just the plot images (not the run itself -
+// results.json/videos stay, so the run keeps showing up here and in Videos).
+async function downloadAllGraphs(){
+  const name=$('runPick').value;
+  if(!name){toast('Pick a run first','err');return;}
+  const btn=$('downloadAllBtn'); btn.disabled=true;
+  try{
+    toast('Regenerating\u2026');
+    const r=await api('/api/analyze','POST',{run:name});
+    if(!r.ok){toast('Error: '+r.error,'err');return;}
+    await loadRuns(); $('runPick').value=name; showRun();
+    if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
+    toast('Downloading\u2026');
+    const resp=await fetch('/api/run/download_plots?run='+encodeURIComponent(name));
+    if(!resp.ok){toast('Error downloading graphs','err');return;}
+    const blob=await resp.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name+'_graphs.zip';
+    document.body.appendChild(a);a.click();a.remove();
+    URL.revokeObjectURL(url);
+    const dr=await api('/api/run/delete_graphs','POST',{run:name});
+    if(!dr.ok){toast('Error deleting graphs: '+dr.error,'err');return;}
+    await loadRuns(); $('runPick').value=name; showRun();
+    toast('Graphs downloaded and deleted','ok');
+  } finally {
+    btn.disabled=!$('runPick').value;
+  }
+}
 function showVideos(){const name=$('vidPick').value;const run=(window._runs||[]).find(r=>r.name==name);
   if(!name){$('videosList').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its videos.</div>';return;}
   if(!run||!run.videos.length){$('videosList').innerHTML='<div class="empty"><b>No videos yet</b>Run this config with record_video enabled.</div>';return;}
