@@ -389,9 +389,6 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/run/delete":
                 status, result = self._delete_run(self._body().get("run", ""))
                 return self._send(status, result)
-            if p == "/api/run/delete_graphs":
-                status, result = self._delete_graphs(self._body().get("run", ""))
-                return self._send(status, result)
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -601,22 +598,6 @@ class Handler(BaseHTTPRequestHandler):
         if run_dir.parent != RUNS_DIR.resolve():
             return None
         return run_dir
-
-    def _delete_graphs(self, run_name: str) -> tuple[int, dict]:
-        """Delete only a run's plot images, leaving results.json and videos
-        (and so the run itself) intact - unlike _delete_run, which removes
-        the whole run folder.
-        """
-        run_dir = self._run_dir(run_name)
-        if run_dir is None:
-            return 400, {"ok": False, "error": "invalid run name"}
-        if not run_dir.exists():
-            return 404, {"ok": False, "error": "not found"}
-        plots = run_dir / "plots"
-        if plots.exists():
-            for f in plots.glob("*.png"):
-                f.unlink()
-        return 200, {"ok": True}
 
     def _delete_run(self, run_name: str) -> tuple[int, dict]:
         """Delete a run's whole folder (results.json/plots/videos) directly.

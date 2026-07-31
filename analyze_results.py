@@ -147,9 +147,15 @@ def plot_success_matrix(rows, out, experiment_name):
                     ha="center", va="center", color="white", fontsize=11)
     ax.set_xlabel("Trial (number of trials executed)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
-    ax.set_title(f"Success matrix of {experiment_name} experiment", fontsize=13, pad=28)
-    ax.text(0.5, 1.07, "green for solved, red for failed, blank for not run",
-            transform=ax.transAxes, ha="center", va="bottom", fontsize=9.5, color=LABEL_GRAY)
+    ax.set_title(f"Success matrix of {experiment_name} experiment", fontsize=13, pad=30)
+    # Anchored with a fixed point offset (not an axes-fraction y like 1.07) so
+    # it always lands just above the axes and below the title's own pad,
+    # regardless of how tall the figure is (many-model runs made the old
+    # fraction-based offset grow past the title's pad and render above it).
+    ax.annotate("green for solved, red for failed, blank for not run",
+                xy=(0.5, 1.0), xycoords="axes fraction",
+                xytext=(0, 8), textcoords="offset points",
+                ha="center", va="bottom", fontsize=9.5, color=LABEL_GRAY)
     fig.tight_layout()
     fig.savefig(out, dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -234,9 +240,11 @@ def _plot_trial_grid(details, num_trials, out, *, value_key, keep_success,
                     color=text_colour, fontsize=10)
     ax.set_xlabel("Trial (number of trials executed)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
-    ax.set_title(title, fontsize=13, pad=28)
-    ax.text(0.5, 1.07, subtitle, transform=ax.transAxes, ha="center", va="bottom",
-            fontsize=9.5, color=LABEL_GRAY)
+    ax.set_title(title, fontsize=13, pad=30)
+    # Fixed point offset, not an axes-fraction y - see plot_success_matrix for why.
+    ax.annotate(subtitle, xy=(0.5, 1.0), xycoords="axes fraction",
+                xytext=(0, 8), textcoords="offset points",
+                ha="center", va="bottom", fontsize=9.5, color=LABEL_GRAY)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label(cbar_label, color=LABEL_GRAY, fontsize=10)
     cbar.ax.tick_params(colors=LABEL_GRAY, labelsize=8)

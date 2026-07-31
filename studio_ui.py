@@ -816,9 +816,9 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
-// Download-all: regenerate the graphs so the zip is current, download every
-// plot as one zip, then delete just the plot images (not the run itself -
-// results.json/videos stay, so the run keeps showing up here and in Videos).
+// Download-all: regenerate the graphs so the zip is current, then download
+// every plot as one zip. The plots stay on disk afterward - downloading a
+// copy shouldn't empty out what's showing on this page.
 async function downloadAllGraphs(){
   const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -837,10 +837,7 @@ async function downloadAllGraphs(){
     const a=document.createElement('a');a.href=url;a.download=name+'_graphs.zip';
     document.body.appendChild(a);a.click();a.remove();
     URL.revokeObjectURL(url);
-    const dr=await api('/api/run/delete_graphs','POST',{run:name});
-    if(!dr.ok){toast('Error deleting graphs: '+dr.error,'err');return;}
-    await loadRuns(); $('runPick').value=name; showRun();
-    toast('Graphs downloaded and deleted','ok');
+    toast('Graphs downloaded','ok');
   } finally {
     btn.disabled=!$('runPick').value;
   }
