@@ -3,3 +3,5 @@ __pycache__
 .env
 //claude//
 *.egg-info/
+/dist/
+/build/
