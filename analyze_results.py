@@ -129,8 +129,9 @@ def plot_think_time(rows, out, experiment_name):
     ax.bar(names, means, color=THINK_TIME_COLOR)
     for i, v in enumerate(means):
         ax.text(i, v, f"{v:.2f}s" if v > 0 else "-", ha="center", va="bottom", fontsize=9)
-    ax.set_ylabel("Mean think time per turn (s)")
-    ax.set_title(f"Think time of {experiment_name}")
+    ax.set_xlabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Average think time (seconds per turn)", color=LABEL_GRAY, fontsize=10)
+    ax.set_title(f"Average thinking time of {experiment_name} experiment", fontsize=13, pad=28)
     _finish(fig, ax, out)
 
 

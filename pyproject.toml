@@ -44,7 +44,6 @@ llmits = "main:main"
 py-modules = [
     "actions",
     "analyze_results",
-    "analyze_scaling",
     "config",
     "experiment",
     "live_viewer",

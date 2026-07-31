@@ -401,13 +401,11 @@ class Handler(BaseHTTPRequestHandler):
     def _regen_graphs(self, run_name):
         """Rebuild all plots for a run from its results.json (no model calls).
 
-        Every plot here - both analyze_results.py's and analyze_scaling.py's -
-        is scoped to this one run's results.json, so an experiment only ever
-        shows its own models, never another experiment's.
+        Every plot here is scoped to this one run's results.json, so an
+        experiment only ever shows its own models, never another experiment's.
         """
         import json
         import analyze_results as ar
-        import analyze_scaling as asc
         rp = RUNS_DIR / run_name / "results.json"
         if not rp.exists():
             return {"ok": False, "error": "no results.json for this run"}
@@ -421,12 +419,10 @@ class Handler(BaseHTTPRequestHandler):
         ar.plot_think_time(rows, plots / "think_time.png", name)
         ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
         ar.plot_tokens_vs_turns(results, plots / "token_usage.png", name)
-        asc.plot_success_rate_confidence_intervals(
-            results, plots / "success_rate_confidence_intervals.png", name
-        )
         # No longer generated (dropped from the Graphs page) - remove any
         # stale copies left over from before so they don't keep showing up.
-        for stale_name in ("param_count_vs_accuracy.png", "accuracy_by_family.png"):
+        for stale_name in ("param_count_vs_accuracy.png", "accuracy_by_family.png",
+                           "success_rate_confidence_intervals.png"):
             stale = plots / stale_name
             if stale.exists():
                 stale.unlink()
