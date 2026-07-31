@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmits"
+version = "0.1.0"
+description = "Large Language Model Instinct Testing under Survival — benchmark LLMs in a hand-built Crafter survival world."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "crafter>=1.8.0",
+    "numpy",
+    "Pillow",
+    "ruamel.yaml",
+    "imageio",
+    "imageio-ffmpeg",
+    "opensimplex",
+    "matplotlib",
+    "python-dotenv",
+    "torch",
+    "transformers",
+    "accelerate",
+    "openai",
+    "google-genai",
+]
+
+[project.scripts]
+llmits = "main:main"
+
+[tool.setuptools]
+py-modules = [
+    "actions",
+    "analyze_results",
+    "analyze_scaling",
+    "config",
+    "experiment",
+    "live_viewer",
+    "main",
+    "observation",
+    "prompt",
+    "studio",
+    "studio_ui",
+    "success",
+    "videos",
+    "viewer",
+    "world",
+]
+
+[tool.setuptools.packages.find]
+include = ["models*"]
