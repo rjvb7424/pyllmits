@@ -54,9 +54,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .welcome-brand .mark{width:40px;height:40px;border-radius:10px;flex-shrink:0}
   .welcome-brand h1{font-size:32px}
   .welcome-tagline{color:var(--muted);font-size:15px;margin:0 0 var(--s6)}
+  /* Demo clip - a locked-down preview, not a player: no controls, no focus
+     ring, no pointer events (so a click can't fullscreen/pause it), no
+     context menu (see oncontextmenu on the <video> itself). */
+  .welcome-demo{margin-bottom:var(--s6);border:1px solid var(--line);border-radius:var(--radius-lg);
+    overflow:hidden;background:#000}
+  .welcome-demo video{display:block;width:100%;max-height:420px;object-fit:contain;
+    pointer-events:none;outline:none}
+  .welcome-demo-caption{padding:var(--s2) var(--s4);font:12px var(--mono);color:var(--muted);
+    background:var(--surface);border-top:1px solid var(--line)}
   .welcome-desc{color:var(--text);line-height:1.65;margin-bottom:var(--s6)}
   .welcome-desc code{font-family:var(--mono);font-size:.92em;background:var(--raised);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .python-logo{display:inline-flex;vertical-align:-5px;margin-right:var(--s2)}
+  .python-logo svg{width:20px;height:20px;display:block}
   .pypi-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
   .pypi-row pre{margin:0;flex-shrink:0}
   .env-field{margin-bottom:var(--s4)}
@@ -151,10 +162,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .check{display:inline-flex;align-items:center;gap:var(--s2);color:var(--text);font-size:14px;min-height:40px;cursor:pointer}
   .check input{width:18px;height:18px;min-height:0;accent-color:var(--accent)}
 
-  button{font:600 14px var(--ui);border-radius:var(--radius);cursor:pointer;min-height:40px;
+  /* Buttons and button-styled links (an <a class="btn-*"> - e.g. an external
+     link that should look identical to a same-tier <button>) share this base:
+     element selector alone won't reach an <a>, so it's listed explicitly. */
+  button,a.btn-primary,a.btn-secondary,a.btn-ghost,a.btn-danger{
+    font:600 14px var(--ui);border-radius:var(--radius);cursor:pointer;min-height:40px;
     padding:0 var(--s4);border:1px solid transparent;display:inline-flex;align-items:center;
-    justify-content:center;gap:var(--s2);transition:background .12s,border-color .12s,transform .04s}
-  button:active{transform:translateY(1px)}
+    justify-content:center;gap:var(--s2);transition:background .12s,border-color .12s,transform .04s;
+    text-decoration:none}
+  button:active,a.btn-primary:active,a.btn-secondary:active,a.btn-ghost:active,a.btn-danger:active{transform:translateY(1px)}
   .btn-primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
   .btn-primary:hover{background:var(--accent-press);border-color:var(--accent-press)}
   .btn-secondary{background:var(--raised);color:var(--text);border-color:var(--line2)}
@@ -276,6 +292,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="welcome-inner">
     <div class="welcome-brand"><span class="mark"></span><h1>Pyllmits</h1></div>
     <div class="welcome-tagline">Large Language Model Instinct Testing under Survival</div>
+
+    <!-- Demo clip - a real run from the harness (2-zombie 18x18 maze), pinned
+         to autoplay/loop/muted with no controls, no focus, no pointer events
+         and no context menu, so it's a passive demo, not a player the user
+         can pause or scrub. -->
+    <div class="welcome-demo">
+      <video src="/api/video?run=dynamic_maze_field_2_zombies_18x18&file=gpt-5.6-sol.mp4"
+        autoplay muted loop playsinline disablepictureinpicture disableremoteplayback
+        controlslist="nodownload noplaybackrate nofullscreen" tabindex="-1"
+        oncontextmenu="return false"></video>
+      <div class="welcome-demo-caption">Live demo &middot; gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
+    </div>
+
     <p class="welcome-desc">
       Pyllmits drops language models into a hand-built <b>Crafter</b> survival world, gives
       each one a snapshot of the world every turn, lets it pick an action, and measures whether
@@ -286,7 +315,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </p>
 
     <div class="card">
-      <h3>The <code>pyllmits</code> package</h3>
+      <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+        <linearGradient id="pyLogoA" gradientUnits="userSpaceOnUse" x1="70.252" y1="1237.476" x2="170.659" y2="1151.089" gradientTransform="matrix(.563 0 0 -.568 -29.215 707.817)"><stop offset="0" stop-color="#5A9FD4"/><stop offset="1" stop-color="#306998"/></linearGradient>
+        <linearGradient id="pyLogoB" gradientUnits="userSpaceOnUse" x1="209.474" y1="1098.811" x2="173.62" y2="1149.537" gradientTransform="matrix(.563 0 0 -.568 -29.215 707.817)"><stop offset="0" stop-color="#FFD43B"/><stop offset="1" stop-color="#FFE873"/></linearGradient>
+        <path fill="url(#pyLogoA)" transform="translate(0 10.26)" d="M63.391 1.988c-4.222.02-8.252.379-11.8 1.007-10.45 1.846-12.346 5.71-12.346 12.837v9.411h24.693v3.137H29.977c-7.176 0-13.46 4.313-15.426 12.521-2.268 9.405-2.368 15.275 0 25.096 1.755 7.311 5.947 12.519 13.124 12.519h8.491V67.234c0-8.151 7.051-15.34 15.426-15.34h24.665c6.866 0 12.346-5.654 12.346-12.548V15.833c0-6.693-5.646-11.72-12.346-12.837-4.244-.706-8.645-1.027-12.866-1.008zM50.037 9.557c2.55 0 4.634 2.117 4.634 4.721 0 2.593-2.083 4.69-4.634 4.69-2.56 0-4.633-2.097-4.633-4.69-.001-2.604 2.073-4.721 4.633-4.721z"/>
+        <path fill="url(#pyLogoB)" transform="translate(0 10.26)" d="M91.682 28.38v10.966c0 8.5-7.208 15.655-15.426 15.655H51.591c-6.756 0-12.346 5.783-12.346 12.549v23.515c0 6.691 5.818 10.628 12.346 12.547 7.816 2.297 15.312 2.713 24.665 0 6.216-1.801 12.346-5.423 12.346-12.547v-9.412H63.938v-3.138h37.012c7.176 0 9.852-5.005 12.348-12.519 2.578-7.735 2.467-15.174 0-25.096-1.774-7.145-5.161-12.521-12.348-12.521h-9.268zM77.809 87.927c2.561 0 4.634 2.097 4.634 4.692 0 2.602-2.074 4.719-4.634 4.719-2.55 0-4.633-2.117-4.633-4.719 0-2.595 2.083-4.692 4.633-4.692z"/>
+      </svg></span>The <code>pyllmits</code> package</h3>
       <div class="sub" style="margin-bottom:var(--s4)">
         Pyllmits is published on PyPI. Install it to drive experiments from the command line
         (this Studio is what <code>python main.py</code> opens by default) or to script runs of
