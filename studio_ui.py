@@ -50,19 +50,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
   #welcome{flex:1;min-height:0;overflow-y:auto}
   #app{display:flex;flex-direction:column;flex:1;min-height:0}
   .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s12) var(--s6) var(--s8)}
-  .welcome-brand{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
-  .welcome-brand .mark{width:40px;height:40px;border-radius:10px;flex-shrink:0}
-  .welcome-brand h1{font-size:32px}
+  .welcome-brand{margin-bottom:var(--s3)}
+  .welcome-brand h1{font-size:32px;color:var(--accent)}
   .welcome-tagline{color:var(--muted);font-size:15px;margin:0 0 var(--s6)}
   /* Demo clip - a locked-down preview, not a player: no controls, no focus
      ring, no pointer events (so a click can't fullscreen/pause it), no
-     context menu (see oncontextmenu on the <video> itself). */
-  .welcome-demo{margin-bottom:var(--s6);border:1px solid var(--line);border-radius:var(--radius-lg);
-    overflow:hidden;background:#000}
-  .welcome-demo video{display:block;width:100%;max-height:420px;object-fit:contain;
+     context menu (see oncontextmenu on the <video> itself). Fixed 16:9 frame
+     with object-fit:cover crops the source's square frame to fill it edge to
+     edge - no letterboxing. */
+  .welcome-demo{margin-bottom:var(--s2);border:1px solid var(--line);border-radius:var(--radius-lg);
+    overflow:hidden;background:#000;aspect-ratio:16/9}
+  .welcome-demo video{display:block;width:100%;height:100%;object-fit:cover;object-position:center;
     pointer-events:none;outline:none}
-  .welcome-demo-caption{padding:var(--s2) var(--s4);font:12px var(--mono);color:var(--muted);
-    background:var(--surface);border-top:1px solid var(--line)}
+  .welcome-demo-caption{margin:0 0 var(--s6);font:12px var(--mono);color:var(--muted)}
   .welcome-desc{color:var(--text);line-height:1.65;margin-bottom:var(--s6)}
   .welcome-desc code{font-family:var(--mono);font-size:.92em;background:var(--raised);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
@@ -76,6 +76,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .env-field label{margin-top:0}
   .env-field .env-hint{font-family:var(--mono);font-size:12px;color:var(--faint);white-space:nowrap}
   .env-field .env-hint.set{color:var(--ok)}
+  .env-field .env-hint.unset{color:var(--danger);font-size:14px}
   .env-field .flex{align-items:stretch}
   .env-field input{flex:1;min-width:180px}
   @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}}
@@ -290,29 +291,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
      straight to a local .env - see /api/env/save in studio.py). -->
 <div id="welcome">
   <div class="welcome-inner">
-    <div class="welcome-brand"><span class="mark"></span><h1>Pyllmits</h1></div>
-    <div class="welcome-tagline">Large Language Model Instinct Testing under Survival</div>
+    <div class="welcome-brand"><h1>Pyllmits</h1></div>
+    <div class="welcome-tagline">Finding the limits of spatial reasoning in large language models</div>
 
-    <!-- Demo clip - a real run from the harness (2-zombie 18x18 maze), pinned
-         to autoplay/loop/muted with no controls, no focus, no pointer events
-         and no context menu, so it's a passive demo, not a player the user
-         can pause or scrub. -->
+    <!-- Demo clip - a real run from the harness, pinned to autoplay/loop/muted
+         with no controls, no focus, no pointer events and no context menu, so
+         it's a passive demo, not a player the user can pause or scrub. -->
     <div class="welcome-demo">
-      <video src="/api/video?run=dynamic_maze_field_2_zombies_18x18&file=gpt-5.6-sol.mp4"
+      <video src="/api/demo_video"
         autoplay muted loop playsinline disablepictureinpicture disableremoteplayback
         controlslist="nodownload noplaybackrate nofullscreen" tabindex="-1"
         oncontextmenu="return false"></video>
-      <div class="welcome-demo-caption">Live demo &middot; gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
     </div>
-
-    <p class="welcome-desc">
-      Pyllmits drops language models into a hand-built <b>Crafter</b> survival world, gives
-      each one a snapshot of the world every turn, lets it pick an action, and measures whether
-      it completes an objective using Crafter's built-in achievement system. World layout, goal,
-      trial/turn counts, and which models to compare are all driven by one YAML config - this
-      Studio is the browser UI for building those configs, launching runs, and reviewing the
-      results (success rates, think time, videos, turn-by-turn replay).
-    </p>
+    <div class="welcome-demo-caption">gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
 
     <div class="card">
       <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -322,15 +313,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <path fill="url(#pyLogoB)" transform="translate(0 10.26)" d="M91.682 28.38v10.966c0 8.5-7.208 15.655-15.426 15.655H51.591c-6.756 0-12.346 5.783-12.346 12.549v23.515c0 6.691 5.818 10.628 12.346 12.547 7.816 2.297 15.312 2.713 24.665 0 6.216-1.801 12.346-5.423 12.346-12.547v-9.412H63.938v-3.138h37.012c7.176 0 9.852-5.005 12.348-12.519 2.578-7.735 2.467-15.174 0-25.096-1.774-7.145-5.161-12.521-12.348-12.521h-9.268zM77.809 87.927c2.561 0 4.634 2.097 4.634 4.692 0 2.602-2.074 4.719-4.634 4.719-2.55 0-4.633-2.117-4.633-4.719 0-2.595 2.083-4.692 4.633-4.692z"/>
       </svg></span>The <code>pyllmits</code> package</h3>
       <div class="sub" style="margin-bottom:var(--s4)">
-        Pyllmits is published on PyPI. Install it to drive experiments from the command line
-        (this Studio is what <code>python main.py</code> opens by default) or to script runs of
-        your own.
+        Pyllmits is published on PyPI - install it to drive experiments from the command line.
       </div>
       <div class="pypi-row">
         <pre>pip install pyllmits</pre>
-        <a class="btn-secondary btn-sm" href="https://pypi.org/project/pyllmits/" target="_blank" rel="noopener noreferrer">View on PyPI &#8594;</a>
+        <a class="btn-primary btn-sm" href="https://pypi.org/project/pyllmits/" target="_blank" rel="noopener noreferrer">View on PyPI &#8594;</a>
       </div>
     </div>
+
+    <p class="welcome-desc">
+      Pyllmits drops language models into a hand-built <b>Crafter</b> survival world and measures
+      whether they can complete an objective, turn by turn. This Studio is the browser UI for
+      building configs, launching runs, and reviewing results.
+    </p>
 
     <div class="card">
       <h3>API keys</h3>
@@ -1009,7 +1004,7 @@ function renderEnvFields(){
     <div class="env-field">
       <div class="env-label-row">
         <label for="env_${i}">${f.label} <span class="faint mono">(${f.env})</span></label>
-        <span class="env-hint${f.set?' set':''}">${f.set?'&#10003; set &middot; '+f.hint:'not set'}</span>
+        <span class="env-hint${f.set?' set':' unset'}">${f.set?'&#10003; set '+f.hint:'&#10007;'}</span>
       </div>
       <div class="flex">
         <input id="env_${i}" data-env="${f.env}" type="password" autocomplete="off" spellcheck="false"

@@ -323,6 +323,11 @@ class Handler(BaseHTTPRequestHandler):
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "video/mp4")
                 return self._send(404, {"error": "not found"})
+            if p == "/api/demo_video":
+                fp = ROOT / "demo.mp4"
+                if fp.exists():
+                    return self._send(200, fp.read_bytes(), "video/mp4")
+                return self._send(404, {"error": "not found"})
             if p == "/api/run/download_plots":
                 run_dir = self._run_dir(q["run"][0])
                 if run_dir is None:
