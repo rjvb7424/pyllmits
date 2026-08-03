@@ -49,7 +49,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
      pattern the header/main/terminal stack already uses. */
   #welcome{flex:1;min-height:0;overflow-y:auto}
   #app{display:flex;flex-direction:column;flex:1;min-height:0}
-  .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s12) var(--s6) var(--s8)}
+  /* Top app bar - sticky (the one bar on this screen that should stay put;
+     unlike the bottom footer, a top bar being pinned while content scrolls
+     beneath it is the idiomatic, expected pattern). Brand on the left reuses
+     the app shell's own .brand/.mark so the two screens read as one product;
+     social/reference links on the right as icon buttons. */
+  .welcome-appbar{position:sticky;top:0;z-index:5;flex-shrink:0;display:flex;align-items:center;
+    justify-content:space-between;padding:var(--s3) var(--s6);background:var(--surface);
+    border-bottom:1px solid var(--line)}
+  .welcome-appbar-links{display:flex;align-items:center;gap:var(--s1)}
+  .appbar-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;
+    border-radius:var(--radius);color:var(--muted);transition:background .12s,color .12s}
+  .appbar-icon-btn:hover{background:var(--raised);color:var(--text)}
+  .appbar-icon-btn svg{width:18px;height:18px;display:block}
+  .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s8) var(--s6)}
   .welcome-brand{margin-bottom:var(--s3)}
   .welcome-brand h1{font-size:32px;color:var(--accent)}
   .welcome-tagline{color:var(--text);font-size:15px;margin:0 0 var(--s6)}
@@ -78,6 +91,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
   .python-logo{display:inline-flex;vertical-align:-5px;margin-right:var(--s2)}
   .python-logo svg{width:20px;height:20px;display:block}
+  .python-logo.mono{color:var(--text)}
   .pypi-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
   .pypi-row pre{margin:0;flex-shrink:0}
   .env-field{margin-bottom:var(--s4)}
@@ -300,6 +314,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
      Pyllmits is, the PyPI package, and where to drop API keys (written
      straight to a local .env - see /api/env/save in studio.py). -->
 <div id="welcome">
+  <div class="welcome-appbar">
+    <div class="brand"><span class="mark"></span><span>Pyllmits</span></div>
+    <div class="welcome-appbar-links">
+      <a class="appbar-icon-btn" href="https://github.com/rjvb7424/pyllmits" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository" title="GitHub">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="appbar-icon-btn" href="https://pypi.org/project/pyllmits/" target="_blank" rel="noopener noreferrer" aria-label="PyPI package" title="PyPI">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M23.922 13.58v3.912L20.55 18.72l-.078.055.052.037 3.45-1.256.026-.036v-3.997l-.053-.036-.025.092z M23.621 5.618l-3.04 1.107v3.912l3.339-1.215V5.509zM23.92 13.457V9.544l-3.336 1.215v3.913zM20.47 14.71V10.8L17.17 12v3.913zM17.034 19.996v-3.912l-3.313 1.206v3.912zM17.17 16.057v3.868l3.314-1.206V14.85l-3.314 1.206zm2.093 1.882c-.367.134-.663-.074-.663-.463s.296-.814.663-.947c.365-.133.662.075.662.464s-.297.814-.662.946z M13.225 9.315l.365-.132-3.285-1.197-3.323 1.21.102.037 3.184 1.16zM20.507 10.664V6.751L17.17 7.965v3.913zM17.058 11.918V8.005l-3.302 1.202v3.912zM13.643 9.246l-3.336 1.215v3.913l3.336-1.215zM6.907 13.165l3.322 1.209v-3.913L6.907 9.252z M10.34 7.873l3.281 1.193V5.198l-3.28-1.193zM20.507 2.715L17.19 3.922v3.913l3.317-1.207zM16.95 3.903L13.724 2.73l-3.269 1.19 3.225 1.174zM15.365 4.606l-1.624.592v3.868l3.317-1.207V3.991l-1.693.615zm-.391 2.778c-.367.134-.662-.074-.662-.464s.295-.813.662-.946c.366-.133.663.074.663.464s-.297.813-.663.946z M10.229 18.41v-3.914l-3.322-1.209V17.2zM13.678 17.182v-3.913l-3.371 1.227v3.913z M13.756 17.154l3.3-1.2V12.04l-3.3 1.2zM13.678 21.217l-3.371 1.227v-3.912h-.078v3.912l-3.322-1.209v-3.913l-.053-.058-.025-.06-3.336-1.21v-3.948l.034.013 3.287 1.196.015-.078-3.261-1.187 3.26-1.187v-.109L3.876 9.62l-.307-.112 3.26-1.188v.877l.079-.055V6.769l3.257 1.185.058-.061L7.084 6.75l-.102-.037 3.24-1.179v-.083L6.854 6.677v.018l-.025.018v1.523L3.44 9.47v.02l-.025.017v4.007l-3.39 1.233v.019L0 14.784v3.995l.025.037 3.4 1.237.008-.006.007.01 3.4 1.238.008-.006.006.01 3.4 1.237.014-.009.012.01 3.45-1.256.026-.037-.078-.027zM3.493 9.563l3.257 1.185-3.257 1.187V9.562zM3.4 19.96L.078 18.752v-3.913l2.361.86.96.349v3.913zm.015-3.99L.335 14.85l-.182-.066 3.262-1.187v2.374zm3.399 5.231l-3.321-1.209v-3.912l3.321 1.209v3.912zM23.791 5.434l-3.21-1.17v2.338zM20.387 2.643l-3.24-1.18-3.27 1.19 3.247 1.182z"/></svg>
+      </a>
+    </div>
+  </div>
   <div class="welcome-inner">
     <div class="welcome-brand"><h1>Pyllmits</h1></div>
     <div class="welcome-tagline">Finding the limits of spatial reasoning in large language models</div>
@@ -328,6 +353,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="pypi-row">
         <pre>pip install pyllmits</pre>
         <a class="btn-primary btn-sm" href="https://pypi.org/project/pyllmits/" target="_blank" rel="noopener noreferrer">View on PyPI &#8594;</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="python-logo mono" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></span>The <code>pyllmits</code> repository</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        Everything - this Studio included - lives in one repo. Browse the code, star it, or open an issue.
+      </div>
+      <div class="pypi-row">
+        <pre>git clone https://github.com/rjvb7424/pyllmits.git</pre>
+        <a class="btn-primary btn-sm" href="https://github.com/rjvb7424/pyllmits" target="_blank" rel="noopener noreferrer">View on GitHub &#8594;</a>
       </div>
     </div>
 
