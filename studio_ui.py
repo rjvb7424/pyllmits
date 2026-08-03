@@ -129,6 +129,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     100%{box-shadow:0 0 0 0 rgba(var(--pulse-rgb),0)}
   }
   .brand{display:flex;align-items:center;gap:var(--s2);font-weight:700;font-size:16px;letter-spacing:-.02em}
+  .brand-link{cursor:pointer;border-radius:var(--radius);padding:var(--s1) var(--s2);margin:calc(var(--s1) * -1) calc(var(--s2) * -1)}
+  .brand-link:hover{background:var(--raised)}
+  .brand-link:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(232,134,60,.25)}
   .brand .mark{width:20px;height:20px;border-radius:5px;
     background:linear-gradient(150deg,var(--accent),#b8531e);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
   nav{display:flex;gap:var(--s1);margin-left:var(--s2)}
@@ -398,7 +401,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
 <div id="app" class="hidden">
 <header>
-  <div class="brand"><span class="mark"></span><span>Pyllmits</span></div>
+  <div class="brand brand-link" role="button" tabindex="0" onclick="showWelcome()"
+    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showWelcome();}"
+    title="Back to start screen" aria-label="Back to start screen">
+    <span class="mark"></span><span>Pyllmits</span>
+  </div>
   <nav role="tablist">
     <button class="tab active" data-tab="configs" role="tab">Configs</button>
     <button class="tab" data-tab="run" role="tab">Run</button>
@@ -1078,6 +1085,12 @@ async function continueToApp(){
   $('welcome').classList.add('hidden');
   $('app').classList.remove('hidden');
   go('configs');
+}
+function showWelcome(){
+  $('app').classList.add('hidden');
+  $('welcome').classList.remove('hidden');
+  $('welcome').scrollTop=0;
+  loadEnvStatus();
 }
 
 // ---------- boot ----------

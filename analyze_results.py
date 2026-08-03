@@ -38,17 +38,28 @@ LABEL_GRAY = "#8a8a8a"
 
 
 def get_experiment_name(results: dict[str, Any], results_path: Path | None = None) -> str:
-    """Extract the experiment name and replace underscores with spaces."""
-    experiment = results.get("experiment", {})
-    if isinstance(experiment, dict):
-        name = experiment.get("name")
-    elif isinstance(experiment, str):
-        name = experiment
-    else:
-        name = None
-    name = name or results.get("experiment_name") or results.get("name")
-    if not name and results_path is not None:
+    """Extract the experiment name and replace underscores with spaces.
+
+    The run folder name (results_path.parent) is authoritative when available:
+    config.py's Config.run_dir is always output_dir/experiment.name, and
+    renaming a config in the Studio moves its run folder to match - so the
+    folder always reflects the *current* name. The "experiment" field stored
+    inside results.json, by contrast, is written once when the run is first
+    created (see experiment.py) and never updated afterward, so it goes stale
+    the moment a config is renamed. Prefer the folder name; fall back to the
+    stored fields only when no path is available (e.g. a bare results dict).
+    """
+    if results_path is not None:
         name = results_path.parent.name
+    else:
+        experiment = results.get("experiment", {})
+        if isinstance(experiment, dict):
+            name = experiment.get("name")
+        elif isinstance(experiment, str):
+            name = experiment
+        else:
+            name = None
+        name = name or results.get("experiment_name") or results.get("name")
     if not name:
         name = "experiment"
     return str(name).replace("_", " ").strip()
