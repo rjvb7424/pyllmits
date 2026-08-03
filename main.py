@@ -111,14 +111,15 @@ def main() -> None:
         results = json.loads(cfg.results_path.read_text())
         rows = analyze_results.summarise(results)
         name = analyze_results.get_experiment_name(results, cfg.results_path)
+        slug = cfg.results_path.parent.name
         cfg.plots_dir.mkdir(parents=True, exist_ok=True)
-        analyze_results.plot_success_rate(rows, cfg.plots_dir / "success_rate.png", name)
-        analyze_results.plot_think_time(rows, cfg.plots_dir / "think_time.png", name)
-        analyze_results.plot_success_matrix(rows, cfg.plots_dir / "success_matrix.png", name)
-        analyze_results.plot_turns_to_solve(results, cfg.plots_dir / "turns_to_solve.png", name)
-        analyze_results.plot_turns_to_fail(results, cfg.plots_dir / "turns_to_fail.png", name)
-        analyze_results.plot_tokens_to_solve(results, cfg.plots_dir / "tokens_to_solve.png", name)
-        analyze_results.plot_tokens_to_fail(results, cfg.plots_dir / "tokens_to_fail.png", name)
+        analyze_results.plot_success_rate(rows, cfg.plots_dir / analyze_results.plot_filename("success_rate", slug), name)
+        analyze_results.plot_think_time(rows, cfg.plots_dir / analyze_results.plot_filename("think_time", slug), name)
+        analyze_results.plot_success_matrix(rows, cfg.plots_dir / analyze_results.plot_filename("success_matrix", slug), name)
+        analyze_results.plot_turns_to_solve(results, cfg.plots_dir / analyze_results.plot_filename("turns_to_solve", slug), name)
+        analyze_results.plot_turns_to_fail(results, cfg.plots_dir / analyze_results.plot_filename("turns_to_fail", slug), name)
+        analyze_results.plot_tokens_to_solve(results, cfg.plots_dir / analyze_results.plot_filename("tokens_to_solve", slug), name)
+        analyze_results.plot_tokens_to_fail(results, cfg.plots_dir / analyze_results.plot_filename("tokens_to_fail", slug), name)
         analyze_results.print_summary(results, rows)
 
     if not args.skip_viewer:

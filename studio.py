@@ -29,7 +29,6 @@ import shutil
 import sys
 import threading
 import webbrowser
-import zipfile
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -328,27 +327,6 @@ class Handler(BaseHTTPRequestHandler):
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "video/mp4")
                 return self._send(404, {"error": "not found"})
-            if p == "/api/run/download_plots":
-                run_dir = self._run_dir(q["run"][0])
-                if run_dir is None:
-                    return self._send(400, {"error": "invalid run name"})
-                plots = run_dir / "plots"
-                files = sorted(plots.glob("*.png")) if plots.exists() else []
-                if not files:
-                    return self._send(404, {"error": "no plots for this run"})
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for f in files:
-                        zf.write(f, arcname=f.name)
-                data = buf.getvalue()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition",
-                                  f'attachment; filename="{run_dir.name}_graphs.zip"')
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-                return
             if p == "/api/run/status":
                 return self._send(200, STUDIO.status())
             if p == "/api/run/frame.png":
@@ -413,6 +391,9 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/run/delete":
                 status, result = self._delete_run(self._body().get("run", ""))
                 return self._send(status, result)
+            if p == "/api/run/download_plots":
+                status, result = self._download_plots(self._body().get("run", ""))
+                return self._send(status, result)
             if p == "/api/env/save":
                 return self._send(200, self._save_env(self._body()))
             return self._send(404, {"error": "unknown route"})
@@ -437,18 +418,20 @@ class Handler(BaseHTTPRequestHandler):
         name = ar.get_experiment_name(results, rp)
         plots = RUNS_DIR / run_name / "plots"
         plots.mkdir(parents=True, exist_ok=True)
-        ar.plot_success_rate(rows, plots / "success_rate.png", name)
-        ar.plot_think_time(rows, plots / "think_time.png", name)
-        ar.plot_success_matrix(rows, plots / "success_matrix.png", name)
-        ar.plot_turns_to_solve(results, plots / "turns_to_solve.png", name)
-        ar.plot_turns_to_fail(results, plots / "turns_to_fail.png", name)
-        ar.plot_tokens_to_solve(results, plots / "tokens_to_solve.png", name)
-        ar.plot_tokens_to_fail(results, plots / "tokens_to_fail.png", name)
-        # No longer generated (dropped from the Graphs page) - remove any
-        # stale copies left over from before so they don't keep showing up.
+        ar.plot_success_rate(rows, plots / ar.plot_filename("success_rate", run_name), name)
+        ar.plot_think_time(rows, plots / ar.plot_filename("think_time", run_name), name)
+        ar.plot_success_matrix(rows, plots / ar.plot_filename("success_matrix", run_name), name)
+        ar.plot_turns_to_solve(results, plots / ar.plot_filename("turns_to_solve", run_name), name)
+        ar.plot_turns_to_fail(results, plots / ar.plot_filename("turns_to_fail", run_name), name)
+        ar.plot_tokens_to_solve(results, plots / ar.plot_filename("tokens_to_solve", run_name), name)
+        ar.plot_tokens_to_fail(results, plots / ar.plot_filename("tokens_to_fail", run_name), name)
+        # No longer generated, or superseded by the name-scoped filenames above
+        # (e.g. a bare "success_rate.png" from before plots were named after
+        # their experiment) - remove any stale copies so they don't linger.
         for stale_name in ("param_count_vs_accuracy.png", "accuracy_by_family.png",
                            "success_rate_confidence_intervals.png",
-                           "turns_to_success.png", "token_usage.png"):
+                           "turns_to_success.png", "token_usage.png",
+                           *(f"{kind}.png" for kind in ar.PLOT_KINDS)):
             stale = plots / stale_name
             if stale.exists():
                 stale.unlink()
@@ -642,6 +625,35 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that experiment is currently running - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
+
+    def _download_plots(self, run_name: str) -> tuple[int, dict]:
+        """Copy a run's plot PNGs into a fresh folder under the user's
+        Downloads, and report its path back.
+
+        The Studio server and the browser are the same machine for this local
+        tool, so "download all" doesn't need to go through the browser's
+        download machinery (a zip, or one file-picker permission per click)
+        at all - the backend can just place a real folder of PNGs directly
+        where a download would have landed.
+        """
+        run_dir = self._run_dir(run_name)
+        if run_dir is None:
+            return 400, {"ok": False, "error": "invalid run name"}
+        plots = run_dir / "plots"
+        files = sorted(plots.glob("*.png")) if plots.exists() else []
+        if not files:
+            return 404, {"ok": False, "error": "no plots for this run"}
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(exist_ok=True)
+        dest = downloads / f"{run_name}_graphs"
+        n = 2
+        while dest.exists():
+            dest = downloads / f"{run_name}_graphs_{n}"
+            n += 1
+        dest.mkdir(parents=True)
+        for f in files:
+            shutil.copy2(f, dest / f.name)
+        return 200, {"ok": True, "path": str(dest), "count": len(files)}
 
     # -- API keys / .env -------------------------------------------------------
     def _env_status(self):

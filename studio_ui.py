@@ -542,7 +542,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="flex">
         <select id="runPick" onchange="showRun()" style="width:240px;text-overflow:ellipsis" aria-label="Pick a run"></select>
         <button class="btn-primary" onclick="regenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
-        <button class="btn-secondary" id="downloadAllBtn" onclick="downloadAllGraphs()" disabled>Download all</button>
+        <button class="btn-secondary" id="downloadAllBtn" onclick="downloadAllGraphs()" disabled
+          title="Saves every graph as a PNG into a new folder in your Downloads">Download all</button>
       </div>
     </div>
     <div id="plots"></div>
@@ -970,7 +971,8 @@ function showRun(){const name=$('runPick').value;const run=(window._runs||[]).fi
   if(!name){$('plots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
   if(!run||!run.plots.length){$('plots').innerHTML='<div class="empty"><b>No plots yet</b>Run this config, or press Regenerate graphs.</div>';return;}
   // success_matrix leads the page - everything else keeps its existing order.
-  const files=run.plots.slice().sort((a,b)=>(a=='success_matrix.png')?-1:(b=='success_matrix.png')?1:0);
+  const isMatrix=f=>f.startsWith('success_matrix');
+  const files=run.plots.slice().sort((a,b)=>isMatrix(a)?-1:isMatrix(b)?1:0);
   $('plots').innerHTML=files.map(f=>`<div>
     <img class="plot" alt="${f}" src="/api/plot?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}&_=${bust}"></div>`).join('');}
 async function regenGraphs(){const name=$('runPick').value;
@@ -978,9 +980,12 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
-// Download-all: regenerate the graphs so the zip is current, then download
-// every plot as one zip. The plots stay on disk afterward - downloading a
-// copy shouldn't empty out what's showing on this page.
+// Download-all: regenerate the graphs so they're current, then have the
+// server copy every plot into one real folder under ~/Downloads (see
+// /api/run/download_plots in studio.py). The Studio server and the browser
+// are the same machine for this local tool, so this sidesteps the browser's
+// download machinery entirely - no zip, no per-click file-picker permission,
+// no loose files scattered in the Downloads root.
 async function downloadAllGraphs(){
   const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -991,15 +996,9 @@ async function downloadAllGraphs(){
     if(!r.ok){toast('Error: '+r.error,'err');return;}
     await loadRuns(); $('runPick').value=name; showRun();
     if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
-    toast('Downloading\u2026');
-    const resp=await fetch('/api/run/download_plots?run='+encodeURIComponent(name));
-    if(!resp.ok){toast('Error downloading graphs','err');return;}
-    const blob=await resp.blob();
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=name+'_graphs.zip';
-    document.body.appendChild(a);a.click();a.remove();
-    URL.revokeObjectURL(url);
-    toast('Graphs downloaded','ok');
+    const d=await api('/api/run/download_plots','POST',{run:name});
+    if(!d.ok){toast('Error: '+d.error,'err');return;}
+    toast(`Saved ${d.count} graphs to ${d.path}`,'ok');
   } finally {
     btn.disabled=!$('runPick').value;
   }

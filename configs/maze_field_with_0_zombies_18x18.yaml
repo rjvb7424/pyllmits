@@ -207,13 +207,7 @@ world:
       positions:
       - - 17
         - 17
-  entities:
-    zombie:
-      positions:
-      - - 5
-        - 5
-      - - 11
-        - 8
+  entities: {}
 prompt:
   include_legend: true
   include_inventory: true

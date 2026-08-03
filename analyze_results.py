@@ -4,15 +4,15 @@ analyze_results.py
 
 Reads a run's results.json and writes plots visualising how well each model
 achieved the objective. The experiment name appears in every title (underscores
-shown as spaces). Plots are written to <run_dir>/plots/:
+shown as spaces). Plots are written to <run_dir>/plots/ as <kind>_of_<name>.png:
 
-  * success_rate.png      - fraction of trials solved, per model
-  * think_time.png        - mean seconds per decision, per model
-  * success_matrix.png    - model x trial grid, solved/failed/not run
-  * turns_to_solve.png    - model x trial grid, turns taken on solved trials
-  * turns_to_fail.png     - model x trial grid, turns taken on failed trials
-  * tokens_to_solve.png   - model x trial grid, tokens used on solved trials
-  * tokens_to_fail.png    - model x trial grid, tokens used on failed trials
+  * success_rate_of_<name>.png    - fraction of trials solved, per model
+  * think_time_of_<name>.png      - mean seconds per decision, per model
+  * success_matrix_of_<name>.png  - model x trial grid, solved/failed/not run
+  * turns_to_solve_of_<name>.png  - model x trial grid, turns taken on solved trials
+  * turns_to_fail_of_<name>.png   - model x trial grid, turns taken on failed trials
+  * tokens_to_solve_of_<name>.png - model x trial grid, tokens used on solved trials
+  * tokens_to_fail_of_<name>.png  - model x trial grid, tokens used on failed trials
 """
 
 from __future__ import annotations
@@ -63,6 +63,22 @@ def get_experiment_name(results: dict[str, Any], results_path: Path | None = Non
     if not name:
         name = "experiment"
     return str(name).replace("_", " ").strip()
+
+
+# Every plot kind this module produces, in the order they should appear.
+PLOT_KINDS = (
+    "success_rate", "think_time", "success_matrix",
+    "turns_to_solve", "turns_to_fail", "tokens_to_solve", "tokens_to_fail",
+)
+
+
+def plot_filename(kind: str, name_slug: str) -> str:
+    """Filename for a plot, e.g. success_rate_of_maze_field_18x18.png.
+
+    name_slug should be the filesystem-safe experiment name (the run folder
+    name), not the space-replaced display title from get_experiment_name.
+    """
+    return f"{kind}_of_{name_slug}.png"
 
 
 def summarise(results: dict[str, Any]) -> list[dict[str, Any]]:
@@ -359,17 +375,18 @@ def main():
     results = json.loads(results_path.read_text(encoding="utf-8"))
     rows = summarise(results)
     experiment_name = get_experiment_name(results, results_path)
+    slug = results_path.parent.name
 
     plots_dir = results_path.parent / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    plot_success_rate(rows, plots_dir / "success_rate.png", experiment_name)
-    plot_think_time(rows, plots_dir / "think_time.png", experiment_name)
-    plot_success_matrix(rows, plots_dir / "success_matrix.png", experiment_name)
-    plot_turns_to_solve(results, plots_dir / "turns_to_solve.png", experiment_name)
-    plot_turns_to_fail(results, plots_dir / "turns_to_fail.png", experiment_name)
-    plot_tokens_to_solve(results, plots_dir / "tokens_to_solve.png", experiment_name)
-    plot_tokens_to_fail(results, plots_dir / "tokens_to_fail.png", experiment_name)
+    plot_success_rate(rows, plots_dir / plot_filename("success_rate", slug), experiment_name)
+    plot_think_time(rows, plots_dir / plot_filename("think_time", slug), experiment_name)
+    plot_success_matrix(rows, plots_dir / plot_filename("success_matrix", slug), experiment_name)
+    plot_turns_to_solve(results, plots_dir / plot_filename("turns_to_solve", slug), experiment_name)
+    plot_turns_to_fail(results, plots_dir / plot_filename("turns_to_fail", slug), experiment_name)
+    plot_tokens_to_solve(results, plots_dir / plot_filename("tokens_to_solve", slug), experiment_name)
+    plot_tokens_to_fail(results, plots_dir / plot_filename("tokens_to_fail", slug), experiment_name)
 
     print_summary(results, rows)
     print(f"Plots written to {plots_dir}/")
