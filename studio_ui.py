@@ -64,6 +64,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     background:var(--raised);pointer-events:none;outline:none}
   .welcome-demo-caption{padding:var(--s2) var(--s4);font:12px var(--mono);color:var(--muted);
     background:var(--surface);border-top:1px solid var(--line)}
+  /* Footer - a real footer: the last thing on the page, scrolling up with
+     everything above it (not pinned/sticky - that read as an app bar). Full
+     viewport width for visual weight, its content column matching the rest
+     of the page. */
+  .welcome-footer{border-top:1px solid var(--line);background:var(--surface);margin-top:var(--s4)}
+  .welcome-footer-inner{max-width:720px;margin:0 auto;padding:var(--s6);
+    display:flex;align-items:center;justify-content:space-between;gap:var(--s4);flex-wrap:wrap}
+  .welcome-footer-cta{font-weight:600;font-size:15px;color:var(--text)}
+  .welcome-footer-sub{color:var(--muted);font-size:13px;margin-top:2px}
   .welcome-desc{color:var(--text);line-height:1.65;margin-bottom:var(--s6)}
   .welcome-desc code{font-family:var(--mono);font-size:.92em;background:var(--raised);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
@@ -338,9 +347,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </div>
       <div id="envFields"><div class="muted">Loading&hellip;</div></div>
     </div>
+  </div>
 
-    <div style="margin-top:var(--s6);text-align:right">
-      <button class="btn-primary" onclick="continueToApp()" style="min-width:160px">Continue &#8594;</button>
+  <div class="welcome-footer">
+    <div class="welcome-footer-inner">
+      <div>
+        <div class="welcome-footer-cta">Ready to put a model in the maze?</div>
+        <div class="welcome-footer-sub">Head into the Studio to build a config and launch a run.</div>
+      </div>
+      <button class="btn-primary" onclick="continueToApp()" style="min-width:220px;padding:0 var(--s8)">Continue &#8594;</button>
     </div>
   </div>
 </div>
