@@ -15,7 +15,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Crafter Studio</title>
+<title>Pyllmits</title>
 <style>
   :root{
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s8:32px; --s12:48px;
@@ -43,6 +43,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .between{display:flex;gap:var(--s3);align-items:center;justify-content:space-between;flex-wrap:wrap}
   .hidden{display:none!important}
   ::selection{background:var(--accent);color:var(--on-accent)}
+
+  /* Welcome screen - shown before the app shell (#app); both are direct flex
+     children of body so whichever isn't .hidden fills the viewport, same
+     pattern the header/main/terminal stack already uses. */
+  #welcome{flex:1;min-height:0;overflow-y:auto}
+  #app{display:flex;flex-direction:column;flex:1;min-height:0}
+  .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s12) var(--s6) var(--s8)}
+  .welcome-brand{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
+  .welcome-brand .mark{width:40px;height:40px;border-radius:10px;flex-shrink:0}
+  .welcome-brand h1{font-size:32px}
+  .welcome-tagline{color:var(--muted);font-size:15px;margin:0 0 var(--s6)}
+  .welcome-desc{color:var(--text);line-height:1.65;margin-bottom:var(--s6)}
+  .welcome-desc code{font-family:var(--mono);font-size:.92em;background:var(--raised);
+    border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .pypi-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+  .pypi-row pre{margin:0;flex-shrink:0}
+  .env-field{margin-bottom:var(--s4)}
+  .env-field:last-child{margin-bottom:0}
+  .env-field .env-label-row{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3)}
+  .env-field label{margin-top:0}
+  .env-field .env-hint{font-family:var(--mono);font-size:12px;color:var(--faint);white-space:nowrap}
+  .env-field .env-hint.set{color:var(--ok)}
+  .env-field .flex{align-items:stretch}
+  .env-field input{flex:1;min-width:180px}
+  @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}}
 
   header{flex-shrink:0;z-index:20;display:flex;align-items:center;flex-wrap:wrap;gap:var(--s4);
     padding:var(--s3) var(--s6);background:var(--surface);border-bottom:1px solid var(--line)}
@@ -243,8 +268,57 @@ INDEX_HTML = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
+
+<!-- WELCOME - the landing page shown before the app shell. Branding, what
+     Pyllmits is, the PyPI package, and where to drop API keys (written
+     straight to a local .env - see /api/env/save in studio.py). -->
+<div id="welcome">
+  <div class="welcome-inner">
+    <div class="welcome-brand"><span class="mark"></span><h1>Pyllmits</h1></div>
+    <div class="welcome-tagline">Large Language Model Instinct Testing under Survival</div>
+    <p class="welcome-desc">
+      Pyllmits drops language models into a hand-built <b>Crafter</b> survival world, gives
+      each one a snapshot of the world every turn, lets it pick an action, and measures whether
+      it completes an objective using Crafter's built-in achievement system. World layout, goal,
+      trial/turn counts, and which models to compare are all driven by one YAML config - this
+      Studio is the browser UI for building those configs, launching runs, and reviewing the
+      results (success rates, think time, videos, turn-by-turn replay).
+    </p>
+
+    <div class="card">
+      <h3>The <code>pyllmits</code> package</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        Pyllmits is published on PyPI. Install it to drive experiments from the command line
+        (this Studio is what <code>python main.py</code> opens by default) or to script runs of
+        your own.
+      </div>
+      <div class="pypi-row">
+        <pre>pip install pyllmits</pre>
+        <a class="btn-secondary btn-sm" href="https://pypi.org/project/pyllmits/" target="_blank" rel="noopener noreferrer">View on PyPI &#8594;</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>API keys</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        Paste keys for the backends you plan to use. They're written straight to a local
+        <code>.env</code> file in this project (never committed - it's git-ignored, never sent
+        anywhere else) and picked up immediately, no restart needed. Leave a field blank to keep
+        whatever's already set.
+      </div>
+      <div id="envFields"><div class="muted">Loading&hellip;</div></div>
+    </div>
+
+    <div class="between" style="margin-top:var(--s6)">
+      <div class="sub" id="envSaveHint">You can add or change keys later - this page doesn't gate the rest of the app.</div>
+      <button class="btn-primary" onclick="continueToApp()" style="min-width:160px">Continue &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
 <header>
-  <div class="brand"><span class="mark"></span><span>Crafter Studio</span></div>
+  <div class="brand"><span class="mark"></span><span>Pyllmits</span></div>
   <nav role="tablist">
     <button class="tab active" data-tab="configs" role="tab">Configs</button>
     <button class="tab" data-tab="run" role="tab">Run</button>
@@ -409,6 +483,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
   <pre id="termOut"><div class="empty">Waiting for output&hellip;</div></pre>
+</div>
 </div>
 
 <div id="toasts" aria-live="polite"></div>
@@ -888,8 +963,45 @@ setInterval(pollTerminal,900);
   window.addEventListener('mouseup',()=>{dragging=false;handle.classList.remove('active');});
 })();
 
+// ---------- Welcome screen (API keys -> .env, then into the app) ----------
+let ENV_FIELDS=[];
+async function loadEnvStatus(){
+  const r=await api('/api/env/status');
+  ENV_FIELDS=r.fields||[];
+  renderEnvFields();
+}
+function renderEnvFields(){
+  $('envFields').innerHTML=ENV_FIELDS.map((f,i)=>`
+    <div class="env-field">
+      <div class="env-label-row">
+        <label for="env_${i}">${f.label} <span class="faint mono">(${f.env})</span></label>
+        <span class="env-hint${f.set?' set':''}">${f.set?'&#10003; set &middot; '+f.hint:'not set'}</span>
+      </div>
+      <div class="flex">
+        <input id="env_${i}" data-env="${f.env}" type="password" autocomplete="off" spellcheck="false"
+          placeholder="${f.set?'leave blank to keep the current key':f.placeholder}">
+        <a class="btn-secondary btn-sm" href="${f.help_url}" target="_blank" rel="noopener noreferrer">Get a key</a>
+      </div>
+    </div>`).join('');
+}
+async function continueToApp(){
+  const body={};
+  document.querySelectorAll('#envFields input[data-env]').forEach(inp=>{
+    if(inp.value.trim())body[inp.dataset.env]=inp.value.trim();
+  });
+  if(Object.keys(body).length){
+    const r=await api('/api/env/save','POST',body);
+    if(!r.ok){toast('Could not save keys: '+(r.error||'unknown error'),'err');return;}
+    toast((r.saved.length>1?'API keys':'API key')+' saved to .env','ok');
+    await loadEnvStatus();
+  }
+  $('welcome').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  go('configs');
+}
+
 // ---------- boot ----------
-(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();pollTerminal();pollRunStatus();})();
+(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();loadEnvStatus();pollTerminal();pollRunStatus();})();
 </script>
 </body></html>
 """

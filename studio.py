@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -35,12 +36,28 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import ruamel.yaml
+from dotenv import set_key
 
 LOG = logging.getLogger("crafter_experiment.studio")
 
 ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
+ENV_PATH = ROOT / ".env"
+
+# The API keys the welcome screen can collect, in display order. Each one maps
+# 1:1 to the env var name a model backend actually reads (see
+# models/openai_api.py DEFAULT_KEY_ENV, models/gemini_api.py DEFAULT_KEY_ENV,
+# models/huggingface_api.py HF_KEY_ENV) so pasting a key here and running an
+# experiment immediately works, with no restart needed.
+API_KEY_FIELDS = [
+    {"env": "OPENAI_API_KEY", "label": "OpenAI", "placeholder": "sk-...",
+     "help_url": "https://platform.openai.com/api-keys"},
+    {"env": "GEMINI_API_KEY", "label": "Gemini", "placeholder": "AIza...",
+     "help_url": "https://aistudio.google.com/apikey"},
+    {"env": "HF_TOKEN", "label": "Hugging Face", "placeholder": "hf_...",
+     "help_url": "https://huggingface.co/settings/tokens"},
+]
 
 
 # =============================================================================
@@ -338,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
                 since = int(q.get("since", ["0"])[0])
                 lines, next_seq = CONSOLE.since(since)
                 return self._send(200, {"lines": lines, "next": next_seq})
+            if p == "/api/env/status":
+                return self._send(200, {"fields": self._env_status()})
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -389,6 +408,8 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/run/delete":
                 status, result = self._delete_run(self._body().get("run", ""))
                 return self._send(status, result)
+            if p == "/api/env/save":
+                return self._send(200, self._save_env(self._body()))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -616,6 +637,48 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that experiment is currently running - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
+
+    # -- API keys / .env -------------------------------------------------------
+    def _env_status(self):
+        """Whether each known key is already set, plus a masked hint (last 4
+        chars) - never the value itself, so it's safe to send to the browser.
+        Checks os.environ first (covers keys set outside .env, e.g. the real
+        shell env) and falls back to the .env file on disk.
+        """
+        from dotenv import dotenv_values
+        on_disk = dotenv_values(ENV_PATH) if ENV_PATH.exists() else {}
+        out = []
+        for f in API_KEY_FIELDS:
+            value = os.environ.get(f["env"]) or on_disk.get(f["env"]) or ""
+            out.append({
+                "env": f["env"], "label": f["label"], "placeholder": f["placeholder"],
+                "help_url": f["help_url"], "set": bool(value),
+                "hint": ("••••" + value[-4:]) if len(value) >= 4 else "",
+            })
+        return out
+
+    def _save_env(self, body: dict) -> dict:
+        """Upsert the submitted keys into .env (creating it if needed) and into
+        this process's environment, so a run started right after Continue
+        immediately sees them - no restart required.
+
+        Blank/whitespace-only values are ignored (leaves any existing key
+        alone) rather than clearing it, since the field is left blank in the
+        UI precisely when a key is already configured.
+        """
+        known = {f["env"] for f in API_KEY_FIELDS}
+        saved = []
+        ENV_PATH.touch(exist_ok=True)
+        for key, value in body.items():
+            if key not in known:
+                continue
+            value = (value or "").strip()
+            if not value:
+                continue
+            set_key(str(ENV_PATH), key, value, quote_mode="always")
+            os.environ[key] = value
+            saved.append(key)
+        return {"ok": True, "saved": saved}
 
 
 # =============================================================================
