@@ -52,17 +52,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s12) var(--s6) var(--s8)}
   .welcome-brand{margin-bottom:var(--s3)}
   .welcome-brand h1{font-size:32px;color:var(--accent)}
-  .welcome-tagline{color:var(--muted);font-size:15px;margin:0 0 var(--s6)}
+  .welcome-tagline{color:var(--text);font-size:15px;margin:0 0 var(--s6)}
   /* Demo clip - a locked-down preview, not a player: no controls, no focus
      ring, no pointer events (so a click can't fullscreen/pause it), no
-     context menu (see oncontextmenu on the <video> itself). Fixed 16:9 frame
-     with object-fit:cover crops the source's square frame to fill it edge to
-     edge - no letterboxing. */
-  .welcome-demo{margin-bottom:var(--s2);border:1px solid var(--line);border-radius:var(--radius-lg);
-    overflow:hidden;background:#000;aspect-ratio:16/9}
-  .welcome-demo video{display:block;width:100%;height:100%;object-fit:cover;object-position:center;
-    pointer-events:none;outline:none}
-  .welcome-demo-caption{margin:0 0 var(--s6);font:12px var(--mono);color:var(--muted)}
+     context menu (see oncontextmenu on the <video> itself). object-fit:contain
+     shows the whole frame (nothing cropped out of the source); any leftover
+     space on the sides is just the card's own background, not black bars. */
+  .welcome-demo{margin-bottom:var(--s6);border:1px solid var(--line);border-radius:var(--radius-lg);
+    overflow:hidden;background:var(--surface)}
+  .welcome-demo video{display:block;width:100%;max-height:420px;object-fit:contain;object-position:center;
+    background:var(--raised);pointer-events:none;outline:none}
+  .welcome-demo-caption{padding:var(--s2) var(--s4);font:12px var(--mono);color:var(--muted);
+    background:var(--surface);border-top:1px solid var(--line)}
   .welcome-desc{color:var(--text);line-height:1.65;margin-bottom:var(--s6)}
   .welcome-desc code{font-family:var(--mono);font-size:.92em;background:var(--raised);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
@@ -76,7 +77,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .env-field label{margin-top:0}
   .env-field .env-hint{font-family:var(--mono);font-size:12px;color:var(--faint);white-space:nowrap}
   .env-field .env-hint.set{color:var(--ok)}
-  .env-field .env-hint.unset{color:var(--danger);font-size:14px}
+  .env-field .env-hint.unset{color:var(--danger)}
   .env-field .flex{align-items:stretch}
   .env-field input{flex:1;min-width:180px}
   @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}}
@@ -302,8 +303,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         autoplay muted loop playsinline disablepictureinpicture disableremoteplayback
         controlslist="nodownload noplaybackrate nofullscreen" tabindex="-1"
         oncontextmenu="return false"></video>
+      <div class="welcome-demo-caption">gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
     </div>
-    <div class="welcome-demo-caption">gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
 
     <div class="card">
       <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -338,8 +339,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div id="envFields"><div class="muted">Loading&hellip;</div></div>
     </div>
 
-    <div class="between" style="margin-top:var(--s6)">
-      <div class="sub" id="envSaveHint">You can add or change keys later - this page doesn't gate the rest of the app.</div>
+    <div style="margin-top:var(--s6);text-align:right">
       <button class="btn-primary" onclick="continueToApp()" style="min-width:160px">Continue &#8594;</button>
     </div>
   </div>
@@ -1004,7 +1004,7 @@ function renderEnvFields(){
     <div class="env-field">
       <div class="env-label-row">
         <label for="env_${i}">${f.label} <span class="faint mono">(${f.env})</span></label>
-        <span class="env-hint${f.set?' set':' unset'}">${f.set?'&#10003; set '+f.hint:'&#10007;'}</span>
+        <span class="env-hint${f.set?' set':' unset'}">${f.set?'&#10003; set '+f.hint:'&#10007; not set'}</span>
       </div>
       <div class="flex">
         <input id="env_${i}" data-env="${f.env}" type="password" autocomplete="off" spellcheck="false"
