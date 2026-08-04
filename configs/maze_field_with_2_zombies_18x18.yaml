@@ -1,5 +1,5 @@
 experiment:
-  name: dynamic_maze_field_2_zombies_18x18
+  name: maze_field_with_2_zombies_18x18
   output_dir: runs
   num_trials: 8
   max_turns: 70
