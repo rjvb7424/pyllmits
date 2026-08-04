@@ -26,6 +26,19 @@ def in_colab() -> bool:
     return "google.colab" in sys.modules
 
 
+def running_under_kernel() -> bool:
+    """True when running inside a Jupyter/Colab notebook kernel (as opposed to
+    a plain `python script.py` shell invocation).
+
+    Matters for argparse: a notebook kernel is launched as e.g.
+    `colab_kernel_launcher.py -f /path/to/connection-file.json`, so a bare
+    `import main; main.main()` inside a notebook cell sees that `-f ...` in
+    sys.argv - not anything the user typed - and argparse rejects it as an
+    unrecognized argument.
+    """
+    return "ipykernel" in sys.modules
+
+
 def open_browser_tab(url: str, port: int, colab: bool | None = None) -> None:
     """Open `url` for the user - via Colab's port proxy if on Colab, otherwise
     the normal local webbrowser.open(). `colab=None` (the default) auto-detects;

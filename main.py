@@ -22,6 +22,7 @@ import json
 import logging
 import os
 
+import colab_support
 from config import load_config
 from experiment import ExperimentRunner
 from live_viewer import DEFAULT_PORT
@@ -59,7 +60,15 @@ def load_env() -> None:
         )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        # A bare `import main; main.main()` inside a notebook kernel (Colab,
+        # Jupyter) sees the kernel's own launcher args in sys.argv (e.g.
+        # `-f /path/to/connection-file.json`), not anything the user typed.
+        # Treat that as "no args", same as a bare `python main.py` in a real
+        # shell - a genuine `python main.py --run` still works normally since
+        # that process's sys.argv never has kernel launcher flags in it.
+        argv = [] if colab_support.running_under_kernel() else None
     ap = argparse.ArgumentParser(description="Run a Crafter LLM experiment.")
     ap.add_argument("config", nargs="?", default="config.yaml",
                     help="path to the experiment config (default: config.yaml)")
@@ -79,7 +88,7 @@ def main() -> None:
                     help="run the experiment directly from the command line instead of "
                          "opening the Studio (which is the default)")
     ap.add_argument("--studio-port", type=int, default=8010, help="Studio UI port")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     configure_logging()
     load_env()  # load .env (API keys) up front - the Studio runs experiments too
