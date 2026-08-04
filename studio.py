@@ -35,7 +35,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import ruamel.yaml
-from dotenv import set_key
+from dotenv import set_key, unset_key
 
 LOG = logging.getLogger("crafter_experiment.studio")
 
@@ -51,11 +51,14 @@ ENV_PATH = ROOT / ".env"
 # experiment immediately works, with no restart needed.
 API_KEY_FIELDS = [
     {"env": "OPENAI_API_KEY", "label": "OpenAI", "placeholder": "sk-...",
-     "help_url": "https://platform.openai.com/api-keys"},
+     "help_url": "https://platform.openai.com/api-keys",
+     "dashboard_url": "https://platform.openai.com/usage"},
     {"env": "GEMINI_API_KEY", "label": "Gemini", "placeholder": "AIza...",
-     "help_url": "https://aistudio.google.com/apikey"},
+     "help_url": "https://aistudio.google.com/apikey",
+     "dashboard_url": "https://aistudio.google.com/app/billing"},
     {"env": "HF_TOKEN", "label": "Hugging Face", "placeholder": "hf_...",
-     "help_url": "https://huggingface.co/settings/tokens"},
+     "help_url": "https://huggingface.co/settings/tokens",
+     "dashboard_url": "https://huggingface.co/settings/billing"},
 ]
 
 
@@ -401,6 +404,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(status, result)
             if p == "/api/env/save":
                 return self._send(200, self._save_env(self._body()))
+            if p == "/api/env/remove":
+                return self._send(200, self._remove_env(self._body()))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -674,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
             value = os.environ.get(f["env"]) or on_disk.get(f["env"]) or ""
             out.append({
                 "env": f["env"], "label": f["label"], "placeholder": f["placeholder"],
-                "help_url": f["help_url"], "set": bool(value),
+                "help_url": f["help_url"], "dashboard_url": f["dashboard_url"], "set": bool(value),
                 "hint": ("••••" + value[-4:]) if len(value) >= 4 else "",
             })
         return out
@@ -701,6 +706,17 @@ class Handler(BaseHTTPRequestHandler):
             os.environ[key] = value
             saved.append(key)
         return {"ok": True, "saved": saved}
+
+    def _remove_env(self, body: dict) -> dict:
+        """Delete one key from .env and from this process's environment."""
+        key = body.get("env", "")
+        known = {f["env"] for f in API_KEY_FIELDS}
+        if key not in known:
+            return {"ok": False, "error": "unknown key"}
+        if ENV_PATH.exists():
+            unset_key(str(ENV_PATH), key)
+        os.environ.pop(key, None)
+        return {"ok": True}
 
 
 # =============================================================================

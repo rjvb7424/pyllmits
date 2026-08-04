@@ -105,6 +105,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .env-field .env-hint.unset{color:var(--danger)}
   .env-field .flex{align-items:stretch}
   .env-field input{flex:1;min-width:180px}
+  .provider-row{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+    padding:var(--s3) 0;border-top:1px solid var(--line)}
+  .provider-row:first-child{border-top:0;padding-top:0}
+  .provider-row:last-child{padding-bottom:0}
   @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}
     .welcome-brand-logo{width:32px;height:32px}}
 
@@ -414,6 +418,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab" data-tab="run" role="tab">Run</button>
     <button class="tab" data-tab="graphs" role="tab">Graphs</button>
     <button class="tab" data-tab="videos" role="tab">Videos</button>
+    <button class="tab" data-tab="providers" role="tab">Providers</button>
   </nav>
   <div style="flex:1"></div>
   <button id="hdrStatus" onclick="go('run')" title="idle" aria-label="Run status - idle">
@@ -563,6 +568,33 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
     <div id="videosList"></div>
   </section>
+
+  <!-- PROVIDERS -->
+  <section id="tab-providers" class="hidden">
+    <div class="between" style="margin-bottom:var(--s4)">
+      <div><h2>Providers</h2><div class="sub">API keys for the model backends you use, and links to each provider's own dashboard.</div></div>
+    </div>
+
+    <div class="card">
+      <h3>API keys</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        Paste keys for the backends you plan to use. They're written straight to a local
+        <code>.env</code> file in this project (never committed - it's git-ignored, never sent
+        anywhere else) and picked up immediately, no restart needed. Leave a field blank to keep
+        whatever's already set.
+      </div>
+      <div id="envFieldsMain"><div class="muted">Loading&hellip;</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Dashboards</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        Remaining credits and usage live on each provider's own site - Pyllmits has no access to
+        that (no provider exposes it through a normal API key). These just jump you there.
+      </div>
+      <div id="providerDashboards"></div>
+    </div>
+  </section>
 </main>
 
 <div id="terminal" class="collapsed">
@@ -587,8 +619,9 @@ const api=(u,m,b)=>fetch(u,{method:m||'GET',headers:{'Content-Type':'application
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');
   t.textContent=msg;$('toasts').appendChild(t);setTimeout(()=>t.remove(),3200);}
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
-  ['configs','editor','run','graphs','videos'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
-  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();}
+  ['configs','editor','run','graphs','videos','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
+  if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();
+  if(t=='providers')loadEnvStatus();}
 document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>go(x.dataset.tab));
 
 function defaultConfig(){return {
@@ -1058,9 +1091,10 @@ async function loadEnvStatus(){
   const r=await api('/api/env/status');
   ENV_FIELDS=r.fields||[];
   renderEnvFields();
+  renderProviderDashboards();
 }
 function renderEnvFields(){
-  $('envFields').innerHTML=ENV_FIELDS.map((f,i)=>`
+  const html=ENV_FIELDS.map((f,i)=>`
     <div class="env-field">
       <div class="env-label-row">
         <label for="env_${i}">${f.label} <span class="faint mono">(${f.env})</span></label>
@@ -1070,7 +1104,29 @@ function renderEnvFields(){
         <input id="env_${i}" data-env="${f.env}" type="password" autocomplete="off" spellcheck="false"
           placeholder="${f.set?'leave blank to keep the current key':f.placeholder}">
         <a class="btn-secondary btn-sm" href="${f.help_url}" target="_blank" rel="noopener noreferrer">Get a key</a>
+        ${f.set?`<button class="btn-danger btn-sm" onclick="removeEnvKey('${f.env}')">Remove</button>`:''}
       </div>
+    </div>`).join('');
+  ['envFields','envFieldsMain'].forEach(id=>{const el=$(id); if(el)el.innerHTML=html;});
+}
+async function removeEnvKey(env){
+  const field=ENV_FIELDS.find(f=>f.env===env);
+  if(!confirm('Remove the '+(field?field.label:env)+' key from .env? Runs using it will fail until you add it back.'))return;
+  const r=await api('/api/env/remove','POST',{env});
+  if(!r.ok){toast('Could not remove key: '+(r.error||'unknown error'),'err');return;}
+  toast((field?field.label:env)+' key removed','ok');
+  await loadEnvStatus();
+}
+function renderProviderDashboards(){
+  const el=$('providerDashboards');
+  if(!el)return;
+  el.innerHTML=ENV_FIELDS.map(f=>`
+    <div class="provider-row">
+      <div>
+        <div>${f.label}</div>
+        <div class="env-hint${f.set?' set':' unset'}">${f.set?'&#10003; set '+f.hint:'&#10007; not set'}</div>
+      </div>
+      <a class="btn-secondary btn-sm" href="${f.dashboard_url}" target="_blank" rel="noopener noreferrer">Open dashboard &#8594;</a>
     </div>`).join('');
 }
 async function continueToApp(){
