@@ -44,6 +44,7 @@ llmits = "main:main"
 py-modules = [
     "actions",
     "analyze_results",
+    "colab_support",
     "config",
     "experiment",
     "live_viewer",

@@ -28,7 +28,6 @@ import re
 import shutil
 import sys
 import threading
-import webbrowser
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,6 +35,8 @@ from urllib.parse import urlparse, parse_qs
 
 import ruamel.yaml
 from dotenv import set_key, unset_key
+
+import colab_support
 
 LOG = logging.getLogger("crafter_experiment.studio")
 
@@ -722,16 +723,24 @@ class Handler(BaseHTTPRequestHandler):
 # =============================================================================
 #  Entry point
 # =============================================================================
-def serve(port: int = 8010, open_browser: bool = True):
+def serve(port: int = 8010, open_browser: bool = True, colab: bool | None = None):
+    """`colab=None` (the default) auto-detects Google Colab and, when found,
+    opens the UI through Colab's port proxy instead of a local browser tab
+    (127.0.0.1 isn't reachable from your browser there). Pass True/False to
+    force one path regardless of environment.
+    """
     _install_console_capture()
     CONFIGS_DIR.mkdir(exist_ok=True)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}"
+    is_colab = colab_support.in_colab() if colab is None else colab
     print("=" * 60)
     print(f"  Crafter Studio: {url}")
+    if is_colab:
+        print("  Running on Colab - opening via Colab's port proxy.")
     print("=" * 60)
     if open_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.6, colab_support.open_browser_tab, args=(url, port, colab)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

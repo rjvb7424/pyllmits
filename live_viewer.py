@@ -26,10 +26,11 @@ import json
 import logging
 import threading
 import time
-import webbrowser
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import colab_support
 
 LOG = logging.getLogger("crafter_experiment.live")
 
@@ -67,11 +68,14 @@ class LiveViewer:
     # =========================================================================
     #  Lifecycle
     # =========================================================================
-    def start(self, open_browser: bool = True) -> str:
+    def start(self, open_browser: bool = True, colab: bool | None = None) -> str:
         """Bind the server, serve in a daemon thread, and open a browser tab.
 
         Returns the URL. ``open_browser=False`` skips the auto-open (e.g. on a
-        headless machine); the URL is always logged either way.
+        headless machine); the URL is always logged either way. ``colab=None``
+        auto-detects Google Colab and opens the URL through Colab's port proxy
+        there instead (127.0.0.1 isn't reachable from your browser on Colab);
+        pass True/False to force one path.
         """
         self._run_dir.mkdir(parents=True, exist_ok=True)
         handler = partial(_Handler, self, directory=str(self._run_dir))
@@ -88,7 +92,7 @@ class LiveViewer:
             # Open a tab once the server thread is up. Non-fatal if it fails
             # (headless box, no default browser) - the URL is logged above.
             try:
-                threading.Timer(0.6, webbrowser.open, args=(url,)).start()
+                threading.Timer(0.6, colab_support.open_browser_tab, args=(url, port, colab)).start()
             except Exception:  # pragma: no cover - environment dependent
                 pass
         return url
