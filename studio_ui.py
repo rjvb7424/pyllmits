@@ -63,7 +63,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .appbar-icon-btn:hover{background:var(--raised);color:var(--text)}
   .appbar-icon-btn svg{width:18px;height:18px;display:block}
   .welcome-inner{max-width:720px;margin:0 auto;padding:var(--s8) var(--s6)}
-  .welcome-brand{margin-bottom:var(--s3)}
+  .welcome-brand{margin-bottom:var(--s3);display:flex;align-items:center;gap:var(--s3)}
+  .welcome-brand-logo{width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
   .welcome-brand h1{font-size:32px;color:var(--accent)}
   .welcome-tagline{color:var(--text);font-size:15px;margin:0 0 var(--s6)}
   /* Demo clip - a locked-down preview, not a player: no controls, no focus
@@ -103,7 +105,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .env-field .env-hint.unset{color:var(--danger)}
   .env-field .flex{align-items:stretch}
   .env-field input{flex:1;min-width:180px}
-  @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}}
+  @media (max-width:600px){.welcome-inner{padding:var(--s8) var(--s4)}.welcome-brand h1{font-size:26px}
+    .welcome-brand-logo{width:32px;height:32px}}
 
   header{flex-shrink:0;z-index:20;display:flex;align-items:center;flex-wrap:wrap;gap:var(--s4);
     padding:var(--s3) var(--s6);background:var(--surface);border-bottom:1px solid var(--line)}
@@ -132,8 +135,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .brand-link{cursor:pointer;border-radius:var(--radius);padding:var(--s1) var(--s2);margin:calc(var(--s1) * -1) calc(var(--s2) * -1)}
   .brand-link:hover{background:var(--raised)}
   .brand-link:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(232,134,60,.25)}
-  .brand .mark{width:20px;height:20px;border-radius:5px;
-    background:linear-gradient(150deg,var(--accent),#b8531e);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+  .brand .mark{width:20px;height:20px;border-radius:5px;object-fit:cover;display:block;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
   nav{display:flex;gap:var(--s1);margin-left:var(--s2)}
   .tab{appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
     font:500 14px var(--ui);padding:var(--s2) var(--s3);border-radius:var(--radius);min-height:36px}
@@ -318,7 +321,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
      straight to a local .env - see /api/env/save in studio.py). -->
 <div id="welcome">
   <div class="welcome-appbar">
-    <div class="brand"><span class="mark"></span><span>Pyllmits</span></div>
+    <div class="brand"><img class="mark" src="/api/logo.png" alt=""/><span>Pyllmits</span></div>
     <div class="welcome-appbar-links">
       <a class="appbar-icon-btn" href="https://github.com/rjvb7424/pyllmits" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository" title="GitHub">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
@@ -329,7 +332,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
   <div class="welcome-inner">
-    <div class="welcome-brand"><h1>Pyllmits</h1></div>
+    <div class="welcome-brand"><img class="welcome-brand-logo" src="/api/logo.png" alt="Pyllmits logo"/><h1>Pyllmits</h1></div>
     <div class="welcome-tagline">Finding the limits of spatial reasoning in large language models</div>
 
     <!-- Demo clip - a real run from the harness, pinned to autoplay/loop/muted
@@ -404,7 +407,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="brand brand-link" role="button" tabindex="0" onclick="showWelcome()"
     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showWelcome();}"
     title="Back to start screen" aria-label="Back to start screen">
-    <span class="mark"></span><span>Pyllmits</span>
+    <img class="mark" src="/api/logo.png" alt=""/><span>Pyllmits</span>
   </div>
   <nav role="tablist">
     <button class="tab active" data-tab="configs" role="tab">Configs</button>

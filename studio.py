@@ -327,6 +327,11 @@ class Handler(BaseHTTPRequestHandler):
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "video/mp4")
                 return self._send(404, {"error": "not found"})
+            if p == "/api/logo.png":
+                fp = ROOT / "logo.png"
+                if fp.exists():
+                    return self._send(200, fp.read_bytes(), "image/png")
+                return self._send(404, {"error": "not found"})
             if p == "/api/run/status":
                 return self._send(200, STUDIO.status())
             if p == "/api/run/frame.png":
