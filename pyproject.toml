@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyllmits"
-version = "0.3.0"
+version = "0.4.0"
 description = "Large Language Model Instinct Testing under Survival - benchmark LLMs in a hand-built Crafter survival world."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -60,4 +60,7 @@ py-modules = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["models*"]
+include = ["models*", "assets*"]
+
+[tool.setuptools.package-data]
+assets = ["*.png", "*.mp4"]

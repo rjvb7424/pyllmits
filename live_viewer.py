@@ -73,9 +73,10 @@ class LiveViewer:
 
         Returns the URL. ``open_browser=False`` skips the auto-open (e.g. on a
         headless machine); the URL is always logged either way. ``colab=None``
-        auto-detects Google Colab and opens the URL through Colab's port proxy
-        there instead (127.0.0.1 isn't reachable from your browser on Colab);
-        pass True/False to force one path.
+        auto-detects Google Colab and returns/logs its real proxy URL there
+        instead (127.0.0.1 isn't reachable from your browser on Colab), and
+        skips the auto-open since opening a new tab isn't reliable from a
+        Colab kernel; pass True/False to force one path.
         """
         self._run_dir.mkdir(parents=True, exist_ok=True)
         handler = partial(_Handler, self, directory=str(self._run_dir))
@@ -84,15 +85,15 @@ class LiveViewer:
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
-        url = f"http://{self._host}:{port}"
+        url, is_colab = colab_support.resolve_url(port, colab)
         LOG.info("=" * 60)
         LOG.info("LIVE VIEW: open %s in your browser", url)
         LOG.info("=" * 60)
-        if open_browser:
+        if open_browser and not is_colab:
             # Open a tab once the server thread is up. Non-fatal if it fails
             # (headless box, no default browser) - the URL is logged above.
             try:
-                threading.Timer(0.6, colab_support.open_browser_tab, args=(url, port, colab)).start()
+                threading.Timer(0.6, colab_support.open_browser_tab, args=(url,)).start()
             except Exception:  # pragma: no cover - environment dependent
                 pass
         return url

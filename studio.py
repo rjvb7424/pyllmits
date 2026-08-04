@@ -37,6 +37,7 @@ import ruamel.yaml
 from dotenv import set_key, unset_key
 
 import colab_support
+from assets import ASSETS_DIR
 
 LOG = logging.getLogger("crafter_experiment.studio")
 
@@ -327,12 +328,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, fp.read_bytes(), "video/mp4")
                 return self._send(404, {"error": "not found"})
             if p == "/api/demo_video":
-                fp = ROOT / "demo.mp4"
+                fp = ASSETS_DIR / "demo.mp4"
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "video/mp4")
                 return self._send(404, {"error": "not found"})
             if p == "/api/logo.png":
-                fp = ROOT / "logo.png"
+                fp = ASSETS_DIR / "logo.png"
                 if fp.exists():
                     return self._send(200, fp.read_bytes(), "image/png")
                 return self._send(404, {"error": "not found"})
@@ -725,22 +726,20 @@ class Handler(BaseHTTPRequestHandler):
 # =============================================================================
 def serve(port: int = 8010, open_browser: bool = True, colab: bool | None = None):
     """`colab=None` (the default) auto-detects Google Colab and, when found,
-    opens the UI through Colab's port proxy instead of a local browser tab
-    (127.0.0.1 isn't reachable from your browser there). Pass True/False to
+    prints the UI's real Colab proxy URL instead of a local one (127.0.0.1
+    isn't reachable from your browser there) and skips the auto-open, since
+    opening a new tab isn't reliable from a Colab kernel. Pass True/False to
     force one path regardless of environment.
     """
     _install_console_capture()
     CONFIGS_DIR.mkdir(exist_ok=True)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    url = f"http://127.0.0.1:{port}"
-    is_colab = colab_support.in_colab() if colab is None else colab
+    url, is_colab = colab_support.resolve_url(port, colab)
     print("=" * 60)
     print(f"  Crafter Studio: {url}")
-    if is_colab:
-        print("  Running on Colab - opening via Colab's port proxy.")
     print("=" * 60)
-    if open_browser:
-        threading.Timer(0.6, colab_support.open_browser_tab, args=(url, port, colab)).start()
+    if open_browser and not is_colab:
+        threading.Timer(0.6, colab_support.open_browser_tab, args=(url,)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
