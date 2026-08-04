@@ -28,7 +28,6 @@ import json
 import logging
 import os
 import tempfile
-import threading
 from pathlib import Path
 
 import numpy as np
@@ -41,55 +40,11 @@ from config import Config
 from live_viewer import DEFAULT_PORT, LiveViewer
 from models import build_model
 from prompt import PromptBuilder
+from run_control import RunControl, StopExperiment
 from success import ObjectiveChecker
 from world import CustomCrafterEnv
 
 LOG = logging.getLogger("crafter_experiment.run")
-
-
-class StopExperiment(Exception):
-    """Raised internally to unwind the run loop when the user hits Stop."""
-
-
-class RunControl:
-    """Thread-safe play/pause/stop switch the Studio UI drives.
-
-    The runner calls checkpoint() between turns; it blocks while paused and
-    raises StopExperiment when stopped. `status` is a plain dict the UI polls.
-    """
-
-    def __init__(self):
-        self._resume = threading.Event()
-        self._resume.set()          # start un-paused
-        self._stopped = False
-        self.status: dict = {"state": "idle"}
-        self.frame_png: bytes | None = None   # latest rendered frame for the UI
-
-    def pause(self):
-        self._resume.clear()
-        self.status["state"] = "paused"
-
-    def resume(self):
-        self._resume.set()
-        self.status["state"] = "running"
-
-    def stop(self):
-        self._stopped = True
-        self._resume.set()          # unblock any pause so it can exit
-        self.status["state"] = "stopping"
-
-    @property
-    def paused(self) -> bool:
-        return not self._resume.is_set()
-
-    def checkpoint(self):
-        """Block while paused; raise StopExperiment if stopped."""
-        self._resume.wait()
-        if self._stopped:
-            raise StopExperiment()
-
-    def update(self, **kw):
-        self.status.update(kw)
 
 
 class ExperimentRunner:

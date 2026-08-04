@@ -44,6 +44,7 @@ LOG = logging.getLogger("crafter_experiment.studio")
 ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
+PAPERFOLD_RUNS_DIR = ROOT / "paperfold_runs"
 ENV_PATH = ROOT / ".env"
 
 # The API keys the welcome screen can collect, in display order. Each one maps
@@ -273,6 +274,81 @@ STUDIO = Studio()
 
 
 # =============================================================================
+#  Server state - paper folding (a second, independent experiment; deliberately
+#  its own singleton rather than a field on Studio, so a Crafter run and a
+#  paper-folding run can proceed at the same time with no shared lock)
+# =============================================================================
+class PaperfoldRun:
+    def __init__(self):
+        self.control = None      # run_control.RunControl while running
+        self.thread = None
+        self.run_name = None
+
+    def is_running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def start_run(self, name: str, num_trials, num_folds, models: list) -> dict:
+        if self.is_running():
+            return {"ok": False, "error": "A paper-folding run is already in progress."}
+        name = (name or "").strip()
+        if not EXPERIMENT_NAME_RE.match(name):
+            return {"ok": False, "error":
+                     "Run name can only contain letters, numbers, underscores and hyphens."}
+        if not models:
+            return {"ok": False, "error": "Pick at least one model."}
+
+        from config import ModelSpec
+        from run_control import RunControl
+
+        try:
+            specs = [ModelSpec.from_dict(dict(m)) for m in models]
+        except Exception as exc:
+            return {"ok": False, "error": f"Invalid model list: {exc}"}
+
+        self.control = RunControl()
+        self.run_name = name
+
+        # Unlike Studio.start_run(), the runner (and its results.json load,
+        # which can raise on a num_folds mismatch) is built INSIDE the worker
+        # thread, not synchronously here - there's no live-view URL that has
+        # to be handed back immediately, so there's no reason to risk a
+        # SystemExit-style escape from the request-handling thread. Any
+        # failure - including at construction - is caught below and always
+        # surfaces through the polled status.
+        def _worker():
+            try:
+                from paperfold.runner import PaperfoldRunner
+                runner = PaperfoldRunner(
+                    name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
+                    control=self.control,
+                )
+                runner.run()
+            except Exception as exc:
+                LOG.exception("paperfold run failed")
+                self.control.update(state="error", error=str(exc))
+
+        self.thread = threading.Thread(target=_worker, daemon=True)
+        self.control.update(state="running")
+        self.thread.start()
+        return {"ok": True}
+
+    def stop_run(self):
+        if self.control:
+            self.control.stop()
+
+    def status(self) -> dict:
+        if self.control is None:
+            return {"state": "idle"}
+        s = dict(self.control.status)
+        s["running"] = self.is_running()
+        s["run_name"] = self.run_name
+        return s
+
+
+PAPERFOLD = PaperfoldRun()
+
+
+# =============================================================================
 #  HTTP handler
 # =============================================================================
 class Handler(BaseHTTPRequestHandler):
@@ -350,6 +426,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"lines": lines, "next": next_seq})
             if p == "/api/env/status":
                 return self._send(200, {"fields": self._env_status()})
+            if p == "/api/paperfold/runs":
+                return self._send(200, {"runs": self._list_paperfold_runs()})
+            if p == "/api/paperfold/run/status":
+                return self._send(200, PAPERFOLD.status())
+            if p == "/api/paperfold/plot":
+                run_dir = self._paperfold_run_dir(q["run"][0])
+                fp = (run_dir / "plots" / q["file"][0]) if run_dir else None
+                if fp and fp.exists():
+                    return self._send(200, fp.read_bytes(), "image/png")
+                return self._send(404, {"error": "not found"})
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -408,6 +494,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self._save_env(self._body()))
             if p == "/api/env/remove":
                 return self._send(200, self._remove_env(self._body()))
+            if p == "/api/paperfold/run/start":
+                b = self._body()
+                return self._send(200, PAPERFOLD.start_run(
+                    b.get("name", ""), b.get("num_trials", 30),
+                    b.get("num_folds", 3), b.get("models", [])))
+            if p == "/api/paperfold/run/pause":
+                if PAPERFOLD.control: PAPERFOLD.control.pause()
+                return self._send(200, {"ok": True})
+            if p == "/api/paperfold/run/resume":
+                if PAPERFOLD.control: PAPERFOLD.control.resume()
+                return self._send(200, {"ok": True})
+            if p == "/api/paperfold/run/stop":
+                PAPERFOLD.stop_run()
+                return self._send(200, {"ok": True})
+            if p == "/api/paperfold/run/delete":
+                status, result = self._delete_paperfold_run(self._body().get("run", ""))
+                return self._send(status, result)
+            if p == "/api/paperfold/analyze":
+                return self._send(200, self._regen_paperfold_graphs(self._body()["run"]))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -666,6 +771,81 @@ class Handler(BaseHTTPRequestHandler):
         for f in files:
             shutil.copy2(f, dest / f.name)
         return 200, {"ok": True, "path": str(dest), "count": len(files)}
+
+    # -- paper folding ----------------------------------------------------------
+    def _paperfold_run_dir(self, run_name: str) -> Path | None:
+        """Resolve run_name to its folder under paperfold_runs/, refusing
+        anything that would escape it (path separators, "..", etc) - same
+        guard as _run_dir(), used here too since /api/paperfold/plot builds a
+        filesystem path straight from a query parameter."""
+        if not run_name:
+            return None
+        run_dir = (PAPERFOLD_RUNS_DIR / run_name).resolve()
+        if run_dir.parent != PAPERFOLD_RUNS_DIR.resolve():
+            return None
+        return run_dir
+
+    def _list_paperfold_runs(self):
+        out = []
+        if PAPERFOLD_RUNS_DIR.exists():
+            for d in sorted(PAPERFOLD_RUNS_DIR.iterdir()):
+                rp = d / "results.json"
+                if not rp.exists():
+                    continue
+                try:
+                    results = json.loads(rp.read_text())
+                except Exception:
+                    continue
+                plots = d / "plots"
+                files = [f.name for f in sorted(plots.glob("*.png"))] if plots.exists() else []
+                models = results.get("models", {})
+                out.append({
+                    "name": d.name,
+                    "plots": files,
+                    "num_trials": results.get("num_trials"),
+                    "num_folds": results.get("num_folds"),
+                    # Only name/backend survive in results.json - per-model
+                    # tuning options (max_tokens, temperature, ...) were never
+                    # persisted, so a "resume this run" prefill can restore
+                    # the model list but not those extra settings.
+                    "models": [{"name": n, "backend": r.get("backend")} for n, r in models.items()],
+                })
+        return out
+
+    def _delete_paperfold_run(self, run_name: str) -> tuple[int, dict]:
+        """Delete a paper-folding run's whole folder (results.json/plots)."""
+        run_dir = self._paperfold_run_dir(run_name)
+        if run_dir is None:
+            return 400, {"ok": False, "error": "invalid run name"}
+        if not run_dir.exists():
+            return 404, {"ok": False, "error": "not found"}
+        if PAPERFOLD.is_running() and PAPERFOLD.run_name == run_name:
+            return 400, {"ok": False, "error": "that run is currently in progress - stop it first"}
+        shutil.rmtree(run_dir)
+        return 200, {"ok": True, "path": str(run_dir)}
+
+    def _regen_paperfold_graphs(self, run_name):
+        """Rebuild all plots for a paper-folding run from its results.json (no
+        model calls). Mirrors _regen_graphs()'s shape for the Crafter side."""
+        import paperfold.analyze_results as ar
+        run_dir = self._paperfold_run_dir(run_name)
+        rp = run_dir / "results.json" if run_dir else None
+        if not rp or not rp.exists():
+            return {"ok": False, "error": "no results.json for this run"}
+        results = json.loads(rp.read_text())
+        rows = ar.filter_scored(ar.flatten(results))
+        plots = run_dir / "plots"
+        plots.mkdir(parents=True, exist_ok=True)
+        if not rows:
+            return {"ok": True, "plots": [], "warning": "No scored trials yet."}
+        for kind, fn in (
+            ("letter_distribution", ar.plot_letter_distribution),
+            ("accuracy_by_model", ar.plot_accuracy_by_model),
+            ("accuracy_vs_cost", ar.plot_accuracy_vs_cost),
+            ("elapsed_time_by_model", ar.plot_elapsed_time_by_model),
+        ):
+            fn(rows, plots / ar.plot_filename(kind, run_name), run_name)
+        return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
 
     # -- API keys / .env -------------------------------------------------------
     def _env_status(self):

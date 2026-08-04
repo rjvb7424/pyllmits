@@ -51,6 +51,7 @@ py-modules = [
     "main",
     "observation",
     "prompt",
+    "run_control",
     "studio",
     "studio_ui",
     "success",
@@ -60,7 +61,7 @@ py-modules = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["models*", "assets*"]
+include = ["models*", "assets*", "paperfold*"]
 
 [tool.setuptools.package-data]
 assets = ["*.png", "*.mp4"]

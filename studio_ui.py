@@ -418,6 +418,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab" data-tab="run" role="tab">Run</button>
     <button class="tab" data-tab="graphs" role="tab">Graphs</button>
     <button class="tab" data-tab="videos" role="tab">Videos</button>
+    <button class="tab" data-tab="paperfold" role="tab">Paper Folding</button>
     <button class="tab" data-tab="providers" role="tab">Providers</button>
   </nav>
   <div style="flex:1"></div>
@@ -569,6 +570,57 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div id="videosList"></div>
   </section>
 
+  <!-- PAPER FOLDING - a second, independent experiment. It shares the models/
+       provider layer (same Backend/Model pickers, same API keys) but nothing
+       else with the Crafter tabs above: its own run state, its own results,
+       its own status panel (not the header pill), its own graphs. -->
+  <section id="tab-paperfold" class="hidden">
+    <div class="between" style="margin-bottom:var(--s4)">
+      <div><h2>Paper Folding</h2><div class="sub">A spatial-reasoning test: fold a grid, punch a hole through the folded layers, and ask a model which of five unfolded candidates matches. Independent of the Crafter tabs above - runs its own trials against its own model pool.</div></div>
+    </div>
+
+    <div class="card"><h3>Setup</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">Each puzzle is freshly randomised (no fixed seed) - accuracy is meant to average out over enough trials, not to be reproduced trial-for-trial.</div>
+      <div class="row">
+        <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
+        <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
+        <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
+      </div>
+      <label>Models</label>
+      <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">The pool of models to test - pick as many as you like, from any provider you have a key for.</div>
+      <div id="pfModels"></div>
+      <button class="btn-secondary btn-sm" onclick="pfAddModel()">+ Add model</button>
+    </div>
+
+    <div class="card"><h3>Run</h3>
+      <div class="flex" style="margin-bottom:var(--s4)">
+        <button class="btn-primary" onclick="pfRunGo()">&#9654;&nbsp;Start</button>
+        <button class="btn-secondary" onclick="pfRunPause()">&#10073;&#10073;&nbsp;Pause</button>
+        <button class="btn-secondary" onclick="pfRunResume()">&#9654;&nbsp;Resume</button>
+        <button class="btn-danger" onclick="pfRunStop()">&#9632;&nbsp;Stop</button>
+      </div>
+      <div class="live-chips">
+        <div class="chip"><div class="k">State</div><div class="v" id="pfState">idle</div></div>
+        <div class="chip"><div class="k">Model</div><div class="v" id="pfModel">&ndash;</div></div>
+        <div class="chip"><div class="k">Trial</div><div class="v" id="pfTrial">&ndash;</div></div>
+        <div class="chip"><div class="k">Last answer</div><div class="v" id="pfLast">&ndash;</div></div>
+      </div>
+    </div>
+
+    <div class="card"><h3>Graphs</h3>
+      <div class="between" style="margin-bottom:var(--s4)">
+        <div class="sub">Result plots for a paper-folding run - regenerate any time, independently of running new trials.</div>
+        <div class="flex">
+          <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
+          <button class="btn-secondary" onclick="pfLoadIntoSetup()" title="Prefill Setup above with this run's name, trial/fold counts and model list (backend only - per-model tuning options aren't saved)">Load into setup</button>
+          <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
+          <button class="btn-danger" onclick="pfDeleteRun()">Delete run</button>
+        </div>
+      </div>
+      <div id="pfPlots"></div>
+    </div>
+  </section>
+
   <!-- PROVIDERS -->
   <section id="tab-providers" class="hidden">
     <div class="between" style="margin-bottom:var(--s4)">
@@ -619,9 +671,9 @@ const api=(u,m,b)=>fetch(u,{method:m||'GET',headers:{'Content-Type':'application
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');
   t.textContent=msg;$('toasts').appendChild(t);setTimeout(()=>t.remove(),3200);}
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
-  ['configs','editor','run','graphs','videos','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
+  ['configs','editor','run','graphs','videos','paperfold','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
   if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();
-  if(t=='providers')loadEnvStatus();}
+  if(t=='providers')loadEnvStatus(); if(t=='paperfold')pfLoadRuns();}
 document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>go(x.dataset.tab));
 
 function defaultConfig(){return {
@@ -1056,6 +1108,156 @@ async function deleteRun(selectId){const name=$(selectId).value;
   toast('Deleted run '+name,'ok');
   await loadRuns(); showRun(); showVideos();}
 
+// ---------- Paper folding (independent experiment - own state, own routes) ----------
+// Model editor: same shape as the Crafter editor's renderModels()/addModel()/etc
+// (same META.backends/META.model_presets pool), but not shared code - paper
+// folding trials are one independent Q&A per trial, not a multi-turn episode,
+// so history_turns/force_action/action_retries are dropped entirely (they'd be
+// meaningless here, and force_action's tool schema is Crafter's action set).
+// max_tokens defaults much higher than Crafter's 256, since a folded/punched
+// grid plus five candidate grids is a lot more content than "one action word".
+let PFCFG={models:[]};
+function pfDefaultModel(){return{name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',max_tokens:4096};}
+function pfIsReasoningModel(m){
+  if(m.reasoning_effort)return true;
+  const n=(m.name||'').toLowerCase();
+  return /^o\d/.test(n)||/^gpt-?[56](\.\d+)?/.test(n);
+}
+function pfModelOptions(m){
+  const list=presetsFor(m.backend).slice();
+  if(m.name&&!list.includes(m.name))list.unshift(m.name);
+  const placeholder=m.name?'':`<option value="" selected disabled>-- pick a model --</option>`;
+  const opts=list.map(p=>`<option ${p==m.name?'selected':''}>${p}</option>`).join('');
+  return placeholder+opts+`<option value="__custom__">(custom id...)</option>`;
+}
+function pfPickModel(i,v){
+  if(v=='__custom__'){const c=prompt('Enter model id:',PFCFG.models[i].name||'');
+    if(c)PFCFG.models[i].name=c; pfRenderModels(); return;}
+  PFCFG.models[i].name=v; pfRenderModels();
+}
+function pfSwitchBackend(i,v){PFCFG.models[i].backend=v; PFCFG.models[i].name=''; pfRenderModels();}
+function pfSetOpt(i,k,v){if(v===''){delete PFCFG.models[i][k];return;}
+  PFCFG.models[i][k]=isNaN(+v)||['reasoning_effort'].includes(k)?v:+v;}
+function pfRenderModels(){$('pfModels').innerHTML=(PFCFG.models||[]).map((m,i)=>{
+  const ready=!!m.name;
+  const readyIcon=ready
+    ?`<span title="Ready - ${m.name} on ${m.backend}" style="color:var(--ok);font-size:16px" aria-label="Model ready">&#10003;</span>`
+    :`<span title="Not ready - pick a model for this backend" style="color:var(--danger);font-size:16px" aria-label="Model not ready">&#10007;</span>`;
+  const reasoning=pfIsReasoningModel(m);
+  if(reasoning)delete m.temperature;
+  const temperatureField=reasoning
+    ?`<div><label>temperature</label><div class="muted" style="min-height:40px;display:flex;align-items:center;font-size:13px">Not supported by this model</div></div>`
+    :`<div><label>temperature</label><input value="${m.temperature??''}" oninput="pfSetOpt(${i},'temperature',this.value)"></div>`;
+  return `
+  <div class="model">
+    <div class="between" style="margin-bottom:var(--s2)">
+      <div class="flex" style="gap:var(--s2)">${readyIcon}<b>${m.name||'model '+(i+1)}</b></div>
+      <button class="btn-danger btn-sm" onclick="pfDelModel(${i})">Remove</button></div>
+    <div class="row">
+      <div><label>Backend</label><select onchange="pfSwitchBackend(${i},this.value)">
+        ${META.backends.map(b=>`<option ${b==m.backend?'selected':''}>${b}</option>`).join('')}</select></div>
+      <div><label>Model</label><select onchange="pfPickModel(${i},this.value)">${pfModelOptions(m)}</select></div>
+    </div>
+    <div class="row">
+      <div><label>max_tokens</label><input value="${m.max_tokens??''}" oninput="pfSetOpt(${i},'max_tokens',this.value)"></div>
+      ${temperatureField}
+      <div><label>reasoning_effort</label><input value="${m.reasoning_effort??''}" oninput="pfSetOpt(${i},'reasoning_effort',this.value)"></div>
+      <div><label>request_delay</label><input value="${m.request_delay??''}" oninput="pfSetOpt(${i},'request_delay',this.value)"></div>
+    </div>
+  </div>`;
+}).join('');}
+function pfAddModel(){PFCFG.models.push(pfDefaultModel());pfRenderModels();}
+function pfDelModel(i){PFCFG.models.splice(i,1);pfRenderModels();}
+
+// ---------- Paper folding: run controls ----------
+let pfLastState=null;
+async function pfRunGo(){
+  const name=($('pf_name').value||'').trim();
+  if(!name){toast('Enter a run name','err');return;}
+  const models=(PFCFG.models||[]).filter(m=>m.name);
+  if(!models.length){toast('Add at least one model (with a model id picked)','err');return;}
+  const body={name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models};
+  const r=await api('/api/paperfold/run/start','POST',body);
+  if(!r.ok){toast(r.error,'err');return;}
+  toast('Paper-folding run started','ok');
+}
+function pfRunPause(){api('/api/paperfold/run/pause','POST');}
+function pfRunResume(){api('/api/paperfold/run/resume','POST');}
+function pfRunStop(){api('/api/paperfold/run/stop','POST');toast('Stopping…');}
+
+// Its own status panel, polled independently - deliberately NOT the header
+// #hdrStatus pill, which stays Crafter-only, so the two experiments' run
+// states are never visually conflated into one indicator.
+function pfUpdateStatus(s){
+  $('pfState').textContent=s.state||'idle';
+  $('pfModel').textContent=s.model||'–';
+  $('pfTrial').textContent=s.model?`${s.trial||'–'} / ${s.num_trials||'–'}`:'–';
+  const last=$('pfLast');
+  if(s.last_predicted!=null){
+    last.textContent=`${s.last_predicted} ${s.last_is_correct?'✓ correct':'✗ wrong (was '+s.last_correct_choice+')'}`;
+    last.classList.toggle('bad',!s.last_is_correct);
+  }else{last.textContent='–';last.classList.remove('bad');}
+}
+async function pfPollStatus(){
+  const s=await api('/api/paperfold/run/status');
+  pfUpdateStatus(s);
+  if(['finished','stopped','error'].includes(s.state)&&!s.running&&pfLastState!==s.state){
+    if(s.state=='finished'){toast('Paper-folding run finished — generating graphs…','ok');
+      if(s.run_name)pfAnalyzeAfterRun(s.run_name);}
+    if(s.state=='error')toast('Paper-folding run failed: '+(s.error||'unknown error'),'err');
+  }
+  pfLastState=s.state;
+}
+setInterval(pfPollStatus,700);
+async function pfAnalyzeAfterRun(name){
+  const r=await api('/api/paperfold/analyze','POST',{run:name});
+  if(!r.ok){toast('Graph generation failed: '+r.error,'err');return;}
+  toast('Graphs ready','ok');
+  if($('tab-paperfold')&&!$('tab-paperfold').classList.contains('hidden')){
+    await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun();
+  }
+}
+
+// ---------- Paper folding: graphs ----------
+async function pfLoadRuns(){const r=await api('/api/paperfold/runs');
+  const sel=$('pfRunPick'); const prev=sel.value;
+  sel.innerHTML='<option value="">-- pick a run --</option>'+
+    r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
+  sel.value=prev;
+  window._pfRuns=r.runs;}
+function pfShowRun(){const name=$('pfRunPick').value;const run=(window._pfRuns||[]).find(r=>r.name==name);const bust=Date.now();
+  if(!name){$('pfPlots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
+  if(!run||!run.plots.length){$('pfPlots').innerHTML='<div class="empty"><b>No plots yet</b>Run this test, or press Regenerate graphs.</div>';return;}
+  $('pfPlots').innerHTML=run.plots.map(f=>`<div>
+    <img class="plot" alt="${f}" src="/api/paperfold/plot?run=${encodeURIComponent(name)}&file=${encodeURIComponent(f)}&_=${bust}"></div>`).join('');}
+async function pfRegenGraphs(){const name=$('pfRunPick').value;
+  if(!name){toast('Pick a run first','err');return;}
+  toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
+  if(!r.ok){toast('Error: '+r.error,'err');return;}
+  await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
+// Prefills Setup from a past run - name/backend only (per-model tuning
+// options like max_tokens/temperature were never persisted in results.json,
+// so this can't restore them, only the model pool itself).
+function pfLoadIntoSetup(){
+  const name=$('pfRunPick').value; const run=(window._pfRuns||[]).find(r=>r.name==name);
+  if(!run){toast('Pick a run first','err');return;}
+  $('pf_name').value=run.name;
+  if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
+  if(run.num_folds!=null)$('pf_folds').value=run.num_folds;
+  PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096}));
+  pfRenderModels();
+  toast('Loaded '+run.name+' into setup (model list only - tuning options weren’t saved)','ok');
+}
+async function pfDeleteRun(){
+  const name=$('pfRunPick').value;
+  if(!name){toast('Pick a run first','err');return;}
+  if(!confirm('Delete paper-folding run \''+name+'\'? This permanently deletes its results and plots. This cannot be undone.'))return;
+  const r=await api('/api/paperfold/run/delete','POST',{run:name});
+  if(!r.ok){toast('Error: '+r.error,'err');return;}
+  toast('Deleted run '+name,'ok');
+  await pfLoadRuns(); pfShowRun();
+}
+
 // ---------- Terminal (mirrors the real process's stdout/stderr/logging) ----------
 let TERM_SEQ=0;
 function toggleTerminal(){const t=$('terminal'),collapsed=t.classList.toggle('collapsed');
@@ -1152,7 +1354,8 @@ function showWelcome(){
 }
 
 // ---------- boot ----------
-(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();loadEnvStatus();pollTerminal();pollRunStatus();})();
+(async()=>{META=await api('/api/meta');renderPalette();loadConfigs();loadEnvStatus();pollTerminal();pollRunStatus();
+  PFCFG.models=[pfDefaultModel()];pfRenderModels();pfLoadRuns();pfPollStatus();})();
 </script>
 </body></html>
 """
