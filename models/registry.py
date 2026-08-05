@@ -10,6 +10,7 @@ Backends, each its own class:
   openai          -> OpenAIModel          (OpenAI API: gpt-*, o*)
   gemini          -> GeminiModel          (Google Gemini API)
   huggingface-api -> HuggingFaceAPIModel  (HF models in the cloud)
+  mock            -> MockModel            (zero-download baseline, no API key)
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from models.huggingface_local import HuggingFaceModel
 from models.openai_api import OpenAIModel
 from models.huggingface_api import HuggingFaceAPIModel
 from models.gemini_api import GeminiModel
+from models.mock import MockModel, GOAL_SYMBOL_BY_TARGET
 
 
 def _openai_style_kwargs(opts: dict) -> dict:
@@ -34,6 +36,7 @@ def _openai_style_kwargs(opts: dict) -> dict:
         force_action=bool(opts.get("force_action", False)),
         action_retries=int(opts.get("action_retries", 0)),
         reasoning_effort=opts.get("reasoning_effort"),
+        history_turns=int(opts.get("history_turns", 0)),
     )
 
 
@@ -75,6 +78,18 @@ def build_model(spec: ModelSpec, objective_target: str | None = None) -> Languag
             max_tokens=int(opts.get("max_tokens", opts.get("max_new_tokens", 256))),
             temperature=float(opts.get("temperature", 0.7)),
             api_key_env=opts.get("api_key_env", "GEMINI_API_KEY"),
+            history_turns=int(opts.get("history_turns", 0)),
+        )
+
+    if backend == "mock":
+        # goal_symbol is auto-derived from the experiment's objective (e.g.
+        # collect_wood -> "T") unless a config explicitly overrides it, so a
+        # heuristic-baseline entry works out of the box in any config.
+        return MockModel(
+            name=spec.name,
+            policy=opts.get("policy", "heuristic"),
+            fixed_action=opts.get("fixed_action", "noop"),
+            goal_symbol=opts.get("goal_symbol") or GOAL_SYMBOL_BY_TARGET.get(objective_target),
         )
 
     raise ValueError(f"Unknown model backend '{spec.backend}' for '{spec.name}'.")

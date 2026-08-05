@@ -180,7 +180,7 @@ MODEL_PRESETS = {
     "huggingface-api": [
         "Qwen/Qwen3-235B-A22B-Instruct-2507", "openai/gpt-oss-120b",
         "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1", 
-        "deepseek-ai/DeepSeek-V4-Pro", "DeepSeek-V4-Flash",
+        "deepseek-ai/DeepSeek-V4-Pro", "deepseek-ai/DeepSeek-V4-Flash",
         "meta-llama/Llama-3.3-70B-Instruct", "microsoft/phi-4",
     ],
     "huggingface": ["microsoft/phi-4", "Qwen/Qwen2.5-7B-Instruct",
