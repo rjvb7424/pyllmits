@@ -602,14 +602,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <option value="random">Random placeholders (new words every trial)</option>
       </select>
       <div id="pfDirLabelsBox" class="hidden" style="margin-top:var(--s3)">
-        <div class="flex" style="align-items:flex-end">
-          <div class="row" style="flex:1;min-width:280px">
-            <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
-            <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
-            <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
-            <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
-          </div>
-          <button class="btn-secondary btn-sm" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button>
+        <div class="row">
+          <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
+          <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
+          <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
+          <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
+          <div><label aria-hidden="true">&nbsp;</label><button class="btn-secondary" style="width:100%" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button></div>
         </div>
       </div>
 
