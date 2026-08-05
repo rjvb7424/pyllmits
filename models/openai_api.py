@@ -187,10 +187,13 @@ class OpenAIModel(LanguageModel):
                 )
 
             # Reasoning tokens count toward the completion budget. A retry gets
-            # progressively more room, up to the configured safety cap.
+            # progressively more room, up to a safety cap - but that cap never
+            # undercuts the max_tokens the user actually configured (it used
+            # to be a flat 8192, silently truncating any higher setting even
+            # on the very first attempt).
             token_budget = min(
                 self._max_tokens * (2 ** attempt),
-                MAX_ACTION_TOKEN_BUDGET,
+                max(self._max_tokens, MAX_ACTION_TOKEN_BUDGET),
             )
 
             params = self._request_params(

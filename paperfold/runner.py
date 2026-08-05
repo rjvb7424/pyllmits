@@ -95,9 +95,16 @@ class PaperfoldRunner:
 
     def _ensure_model_records(self) -> None:
         for spec in self.model_specs:
-            self.results["models"].setdefault(
-                spec.name, {"backend": spec.backend, "slug": spec.slug, "error": None, "trials": []}
+            record = self.results["models"].setdefault(
+                spec.name, {"error": None, "trials": []}
             )
+            # Refresh backend/options every time (not just on first creation)
+            # so editing a model's tuning (max_tokens, temperature, ...) and
+            # re-saving/resuming actually updates what's on disk, instead of
+            # the first-ever save winning forever.
+            record["backend"] = spec.backend
+            record["slug"] = spec.slug
+            record["options"] = spec.options
 
     def save(self) -> None:
         """Persist the current setup/results to disk. Safe to call without

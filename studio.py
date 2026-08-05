@@ -634,6 +634,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(status, result)
             if p == "/api/paperfold/analyze":
                 return self._send(200, self._regen_paperfold_graphs(self._body()["run"]))
+            if p == "/api/paperfold/run/download_plots":
+                status, result = self._download_paperfold_plots(self._body().get("run", ""))
+                return self._send(status, result)
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -930,11 +933,11 @@ class Handler(BaseHTTPRequestHandler):
                     # "fixed" - "random" mode has no single mapping to report,
                     # a fresh one was drawn every trial.
                     "direction_labels": (results.get("config_fingerprint") or {}).get("direction_labels"),
-                    # Only name/backend survive in results.json - per-model
-                    # tuning options (max_tokens, temperature, ...) were never
-                    # persisted, so a "resume this run" prefill can restore
-                    # the model list but not those extra settings.
-                    "models": [{"name": n, "backend": r.get("backend")} for n, r in models.items()],
+                    # Per-model tuning options (max_tokens, temperature, ...)
+                    # are persisted alongside name/backend, so "resume this
+                    # run" and "duplicate" prefills restore them exactly.
+                    "models": [{"name": n, "backend": r.get("backend"), "options": r.get("options") or {}}
+                               for n, r in models.items()],
                 })
         return out
 
@@ -951,12 +954,10 @@ class Handler(BaseHTTPRequestHandler):
         return 200, {"ok": True, "path": str(run_dir)}
 
     def _duplicate_paperfold_run(self, run_name: str) -> tuple[int, dict]:
-        """Copy a run's SETUP (trial/fold counts, direction mode, model
-        names+backends) into a fresh run named '<name>_copy' - no trial data
-        carries over, same "start clean" spirit as Crafter's config duplicate.
-        Per-model tuning options (max_tokens, temperature, ...) aren't stored
-        in results.json, so - like the "resume this run" picker - only each
-        model's name and backend come along.
+        """Copy a run's SETUP (trial/fold counts, direction mode, models incl.
+        their tuning options) into a fresh run named '<name>_copy' - no trial
+        data carries over, same "start clean" spirit as Crafter's config
+        duplicate.
         """
         src_dir = self._paperfold_run_dir(run_name)
         if src_dir is None or not src_dir.exists():
@@ -977,7 +978,7 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "That run has no models to copy."}
 
         from config import ModelSpec
-        specs = [ModelSpec(name=mname, backend=rec.get("backend") or "openai", options={})
+        specs = [ModelSpec(name=mname, backend=rec.get("backend") or "openai", options=dict(rec.get("options") or {}))
                  for mname, rec in models.items()]
         fingerprint = src.get("config_fingerprint") or {}
 
@@ -992,6 +993,29 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": str(exc)}
         runner.save()
         return 200, {"ok": True, "name": new_name}
+
+    def _download_paperfold_plots(self, run_name: str) -> tuple[int, dict]:
+        """Copy a paper-folding run's plot PNGs into a fresh folder under the
+        user's Downloads. Mirrors _download_plots()'s shape for the Crafter
+        side - same local-machine shortcut, just scoped to paperfold_runs/."""
+        run_dir = self._paperfold_run_dir(run_name)
+        if run_dir is None:
+            return 400, {"ok": False, "error": "invalid run name"}
+        plots = run_dir / "plots"
+        files = sorted(plots.glob("*.png")) if plots.exists() else []
+        if not files:
+            return 404, {"ok": False, "error": "no plots for this run"}
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(exist_ok=True)
+        dest = downloads / f"{run_name}_graphs"
+        n = 2
+        while dest.exists():
+            dest = downloads / f"{run_name}_graphs_{n}"
+            n += 1
+        dest.mkdir(parents=True)
+        for f in files:
+            shutil.copy2(f, dest / f.name)
+        return 200, {"ok": True, "path": str(dest), "count": len(files)}
 
     def _regen_paperfold_graphs(self, run_name):
         """Rebuild all plots for a paper-folding run from its results.json (no

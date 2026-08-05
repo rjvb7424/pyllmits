@@ -656,6 +656,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="flex">
           <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
           <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
+          <button class="btn-secondary" id="pfDownloadAllBtn" onclick="pfDownloadAllGraphs()" disabled
+            title="Saves every graph as a PNG into a new folder in your Downloads">Download all</button>
           <button class="btn-danger" onclick="pfDeleteRun('pfRunPick')">Delete run</button>
         </div>
       </div>
@@ -1402,8 +1404,10 @@ async function pfLoadRuns(){const r=await api('/api/paperfold/runs');
     r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
   $('pfRunPick').value=prevGraph;
   $('pfSetupPick').value=prevSetup;
+  $('pfDownloadAllBtn').disabled=!$('pfRunPick').value;
   window._pfRuns=r.runs;}
 function pfShowRun(){const name=$('pfRunPick').value;const run=(window._pfRuns||[]).find(r=>r.name==name);const bust=Date.now();
+  $('pfDownloadAllBtn').disabled=!name;
   if(!name){$('pfPlots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
   if(!run||!run.plots.length){$('pfPlots').innerHTML='<div class="empty"><b>No plots yet</b>Run this test, or press Regenerate graphs.</div>';return;}
   $('pfPlots').innerHTML=run.plots.map(f=>`<div>
@@ -1413,15 +1417,37 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
+// Same shortcut as Crafter's downloadAllGraphs(): regenerate so the graphs
+// are current, then have the server copy every PNG into one real folder
+// under ~/Downloads (see _download_paperfold_plots in studio.py) - no zip,
+// no per-click browser file-picker, since Studio and the browser are the
+// same machine for this local tool.
+async function pfDownloadAllGraphs(){
+  const name=$('pfRunPick').value;
+  if(!name){toast('Pick a run first','err');return;}
+  const btn=$('pfDownloadAllBtn'); btn.disabled=true;
+  try{
+    toast('Regenerating…');
+    const r=await api('/api/paperfold/analyze','POST',{run:name});
+    if(!r.ok){toast('Error: '+r.error,'err');return;}
+    await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun();
+    if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
+    const d=await api('/api/paperfold/run/download_plots','POST',{run:name});
+    if(!d.ok){toast('Error: '+d.error,'err');return;}
+    toast(`Saved ${d.count} graphs to ${d.path}`,'ok');
+  } finally {
+    btn.disabled=!$('pfRunPick').value;
+  }
+}
 
 // ---------- Paper folding: resume/edit a previous run from Setup ----------
 // Loads a past run's settings into the form so Start continues it: raising
 // Trials makes already-complete models do just the difference (each model
 // resumes from however many trials it already has - see
 // PaperfoldRunner._run_model), and a newly added model runs in full since it
-// has none yet. Only name/backend survive in results.json - per-model tuning
-// options (max_tokens, temperature, ...) were never persisted, so those come
-// back at their defaults, not whatever they were set to originally.
+// has none yet. Per-model tuning options (max_tokens, temperature, ...) are
+// persisted in results.json and restored here too; only runs saved before
+// that was added fall back to the defaults below.
 function pfApplyRunToSetup(run){
   $('pf_name').value=run.name;
   if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
@@ -1434,7 +1460,7 @@ function pfApplyRunToSetup(run){
     $('pf_dir_east').value=run.direction_labels.east||'';
     $('pf_dir_west').value=run.direction_labels.west||'';
   }
-  PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096}));
+  PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096,...(m.options||{})}));
   pfRenderModels();
 }
 function pfResetSetup(){
