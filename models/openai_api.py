@@ -361,23 +361,22 @@ class OpenAIModel(LanguageModel):
 
                 raise
 
-            except openai.APIStatusError as exc:
-                # Hugging Face may return HTTP 405 for models such as Phi-4 that
-                # do not support tool calling.
-                if (
-                    "tools" in params
-                    and self._is_tools_unsupported(exc)
-                ):
-                    self._disable_tools_and_retry(params)
-                    continue
-
-                raise
-
             except (
+                openai.InternalServerError,
                 openai.RateLimitError,
                 openai.APITimeoutError,
                 openai.APIConnectionError,
             ) as exc:
+                # InternalServerError covers 5xx responses - including a 504
+                # Gateway Timeout, which a slow/overloaded hosted model (a
+                # large reasoning model via a router, for instance) can
+                # trigger routinely and which has nothing to do with the
+                # request itself. Worth retrying with backoff exactly like a
+                # rate limit, rather than aborting the whole trial (and, for
+                # a caller with no retry-isolation of its own, the whole run).
+                # Listed before the plain APIStatusError handler below since
+                # InternalServerError is a subclass of it - the more specific
+                # except must come first to actually catch it here.
                 rate_limit_attempts += 1
 
                 if rate_limit_attempts > self._max_retries:
@@ -389,15 +388,28 @@ class OpenAIModel(LanguageModel):
                 )
 
                 LOG.warning(
-                    "[%s] rate limited / transient error - "
+                    "[%s] rate limited / transient error (%s) - "
                     "waiting %.1fs, retry %d/%d",
                     self.name,
+                    exc.__class__.__name__,
                     wait,
                     rate_limit_attempts,
                     self._max_retries,
                 )
 
                 time.sleep(wait)
+
+            except openai.APIStatusError as exc:
+                # Hugging Face may return HTTP 405 for models such as Phi-4 that
+                # do not support tool calling.
+                if (
+                    "tools" in params
+                    and self._is_tools_unsupported(exc)
+                ):
+                    self._disable_tools_and_retry(params)
+                    continue
+
+                raise
 
     def _disable_tools_and_retry(self, params: dict) -> None:
         self._tools_supported = False
