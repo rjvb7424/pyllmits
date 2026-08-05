@@ -586,6 +586,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
         <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
       </div>
+
+      <label for="pf_dirmode">Direction names</label>
+      <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Optionally replace north/south/east/west with placeholder words in the prompt, to test whether a model is doing real spatial reasoning or just pattern-matching on those specific direction words.</div>
+      <select id="pf_dirmode" onchange="pfUpdateDirMode()">
+        <option value="real">Real names (north / south / east / west)</option>
+        <option value="fixed">Custom placeholders (same words every trial)</option>
+        <option value="random">Random placeholders (new words every trial)</option>
+      </select>
+      <div id="pfDirLabelsBox" class="hidden" style="margin-top:var(--s3)">
+        <div class="row">
+          <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
+          <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
+          <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
+          <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
+        </div>
+        <button class="btn-secondary btn-sm" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button>
+      </div>
+
       <label>Models</label>
       <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">The pool of models to test - pick as many as you like, from any provider you have a key for.</div>
       <div id="pfModels"></div>
@@ -604,6 +622,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="chip"><div class="k">Model</div><div class="v" id="pfModel">&ndash;</div></div>
         <div class="chip"><div class="k">Trial</div><div class="v" id="pfTrial">&ndash;</div></div>
         <div class="chip"><div class="k">Last answer</div><div class="v" id="pfLast">&ndash;</div></div>
+        <div class="chip"><div class="k">Directions this trial</div><div class="v mono" id="pfDirLive" style="font-size:12px">&ndash;</div></div>
       </div>
     </div>
 
@@ -1118,6 +1137,30 @@ async function deleteRun(selectId){const name=$(selectId).value;
 // grid plus five candidate grids is a lot more content than "one action word".
 let PFCFG={models:[]};
 function pfDefaultModel(){return{name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',max_tokens:4096};}
+
+// ---------- Paper folding: direction naming ----------
+// "real" (default) leaves the prompt exactly as before. "fixed" swaps in one
+// set of placeholder words for every trial in the run. "random" draws a
+// fresh mapping every trial (still explained at the top of that trial's own
+// prompt) - the more rigorous variant, since accuracy can't come from the
+// model latching onto one particular word choice.
+const PF_WORD_BANK=['red','blue','green','yellow','purple','orange','pink','teal','gold','silver','indigo','crimson'];
+function pfUpdateDirMode(){
+  const mode=$('pf_dirmode').value;
+  $('pfDirLabelsBox').classList.toggle('hidden',mode!=='fixed');
+  if(mode=='fixed'&&!$('pf_dir_north').value)pfShuffleDirLabels();
+}
+function pfShuffleDirLabels(){
+  const pool=PF_WORD_BANK.slice(),picks=[];
+  for(let i=0;i<4;i++){const idx=Math.floor(Math.random()*pool.length);picks.push(pool.splice(idx,1)[0]);}
+  $('pf_dir_north').value=picks[0];$('pf_dir_south').value=picks[1];
+  $('pf_dir_east').value=picks[2];$('pf_dir_west').value=picks[3];
+}
+function pfFormatDirLabels(labels){
+  if(!labels)return 'real names';
+  return `N=${labels.north} S=${labels.south} E=${labels.east} W=${labels.west}`;
+}
+
 function pfIsReasoningModel(m){
   if(m.reasoning_effort)return true;
   const n=(m.name||'').toLowerCase();
@@ -1176,7 +1219,17 @@ async function pfRunGo(){
   if(!name){toast('Enter a run name','err');return;}
   const models=(PFCFG.models||[]).filter(m=>m.name);
   if(!models.length){toast('Add at least one model (with a model id picked)','err');return;}
-  const body={name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models};
+  const direction_mode=$('pf_dirmode').value;
+  let direction_labels=null;
+  if(direction_mode=='fixed'){
+    direction_labels={north:$('pf_dir_north').value.trim(),south:$('pf_dir_south').value.trim(),
+                       east:$('pf_dir_east').value.trim(),west:$('pf_dir_west').value.trim()};
+    const vals=Object.values(direction_labels);
+    if(vals.some(v=>!v)){toast('Fill in all four direction placeholder names, or switch to Real/Random','err');return;}
+    if(new Set(vals.map(v=>v.toLowerCase())).size<4){toast('Direction placeholder names must all be different','err');return;}
+  }
+  const body={name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models,
+    direction_mode, direction_labels};
   const r=await api('/api/paperfold/run/start','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
   toast('Paper-folding run started','ok');
@@ -1197,6 +1250,7 @@ function pfUpdateStatus(s){
     last.textContent=`${s.last_predicted} ${s.last_is_correct?'✓ correct':'✗ wrong (was '+s.last_correct_choice+')'}`;
     last.classList.toggle('bad',!s.last_is_correct);
   }else{last.textContent='–';last.classList.remove('bad');}
+  $('pfDirLive').textContent=s.model?pfFormatDirLabels(s.direction_labels):'–';
 }
 async function pfPollStatus(){
   const s=await api('/api/paperfold/run/status');
@@ -1244,6 +1298,14 @@ function pfLoadIntoSetup(){
   $('pf_name').value=run.name;
   if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
   if(run.num_folds!=null)$('pf_folds').value=run.num_folds;
+  $('pf_dirmode').value=run.direction_mode||'real';
+  pfUpdateDirMode();
+  if(run.direction_mode=='fixed'&&run.direction_labels){
+    $('pf_dir_north').value=run.direction_labels.north||'';
+    $('pf_dir_south').value=run.direction_labels.south||'';
+    $('pf_dir_east').value=run.direction_labels.east||'';
+    $('pf_dir_west').value=run.direction_labels.west||'';
+  }
   PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096}));
   pfRenderModels();
   toast('Loaded '+run.name+' into setup (model list only - tuning options weren’t saved)','ok');

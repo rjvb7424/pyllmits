@@ -16,6 +16,26 @@ import random
 import copy
 import re
 
+# The four fold orientations the puzzle logic works in. build_prompt() can
+# present these under placeholder names (see CognitiveTest's direction_labels)
+# without changing anything about how folding/unfolding actually works -
+# labeling is presentation only, never touches the grid math.
+DIRECTIONS = ("north", "south", "east", "west")
+
+# A bank of short, unambiguous, unrelated words to draw placeholder direction
+# names from (paperfold/runner.py's "random per trial" mode samples 4 of
+# these). Deliberately generic - no accidental compass/spatial connotation.
+DEFAULT_LABEL_POOL = (
+    "red", "blue", "green", "yellow", "purple", "orange",
+    "pink", "teal", "gold", "silver", "indigo", "crimson",
+)
+
+
+def random_direction_labels(pool=DEFAULT_LABEL_POOL):
+    """A fresh random {direction: placeholder} mapping, one word per
+    direction, no word reused."""
+    return dict(zip(DIRECTIONS, random.sample(pool, len(DIRECTIONS))))
+
 
 class Paper:
     """Class representing a piece of paper that can be folded and punched."""
@@ -43,7 +63,7 @@ class Paper:
 
     def fold(self, orientation="north"):
         """Fold the paper in the given orientation."""
-        if orientation not in ("north", "south", "east", "west"):
+        if orientation not in DIRECTIONS:
             raise ValueError(f"Unknown fold orientation: {orientation!r}")
         # Halve the current dimensions based on the fold orientation
         if orientation in ("north", "south"):
@@ -91,7 +111,7 @@ class Paper:
 
 class CognitiveTest:
     """Class representing a cognitive test involving folding and punching paper."""
-    def __init__(self, width=16, height=16):
+    def __init__(self, width=16, height=16, direction_labels=None):
         # Initialize the test with a Paper instance
         self.test_paper = Paper(width, height)
         self.choices = {"A": None, "B": None, "C": None, "D": None, "E": None}
@@ -105,6 +125,13 @@ class CognitiveTest:
         # Positions already used, so no two choices
         # (including the correct one) can ever land on the same spot.
         self.used_positions = set()
+        # Optional {"north": "yellow", "south": "green", "east": "blue",
+        # "west": "red"}-style mapping. When set, build_prompt() explains and
+        # uses these placeholder names instead of the real direction words -
+        # a probe for whether a solver is doing real spatial reasoning or
+        # just pattern-matching on "north"/"south"/"east"/"west" specifically.
+        # None (the default) reproduces the original prompt exactly.
+        self.direction_labels = direction_labels
 
     def fold(self, orientation):
         """Fold the test paper in the given orientation and record it."""
@@ -114,7 +141,7 @@ class CognitiveTest:
     def fold_random(self, num_folds=3):
         """Fold the test paper n times in random orientations."""
         for _ in range(num_folds):
-            orientation = random.choice(["north", "south", "east", "west"])
+            orientation = random.choice(DIRECTIONS)
             self.fold(orientation)
 
     def generate_choices(self):
@@ -175,10 +202,24 @@ class CognitiveTest:
     def build_prompt(self):
         """Build the text prompt sent to the AI model for evaluation. """
         """Returns a string containing the test description, fold sequence, and choice papers."""
-        lines = [
+        labels = self.direction_labels
+        # When direction_labels is set, every direction word shown to the
+        # model is the placeholder, never the real one - only this function's
+        # own bookkeeping (fold_orientations, Paper.fold, unfold, ...) still
+        # deals in real directions, so puzzle logic is unaffected.
+        name = (lambda d: labels[d] if labels else d)
+
+        lines = []
+        if labels:
+            legend = ", ".join(f"{labels[d]} means {d}" for d in DIRECTIONS)
+            lines.append(
+                "For this puzzle, fold directions are referred to by these "
+                f"names instead of their usual ones: {legend}."
+            )
+        lines += [
             f"A square paper with dimensions {self.test_paper.ORIGINAL_WIDTH}x"
             f"{self.test_paper.ORIGINAL_HEIGHT} is folded in this order: "
-            f"{' -> '.join(self.fold_orientations)}.",
+            f"{' -> '.join(name(d) for d in self.fold_orientations)}.",
             f"After these folds, the papers dimensions are {self.folded_width}x"
             f"{self.folded_height}. "
             "A hole is then punched through all layers at one position on "

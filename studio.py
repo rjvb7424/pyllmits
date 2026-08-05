@@ -45,6 +45,7 @@ ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
 PAPERFOLD_RUNS_DIR = ROOT / "paperfold_runs"
+PAPERFOLD_DIRECTIONS = ("north", "south", "east", "west")
 ENV_PATH = ROOT / ".env"
 
 # The API keys the welcome screen can collect, in display order. Each one maps
@@ -174,16 +175,18 @@ BACKENDS = ["openai", "huggingface-api", "huggingface", "gemini"]
 # Curated model ids offered as a dropdown per backend (you can still type a
 # custom id). These are common, currently-hosted options - not exhaustive.
 MODEL_PRESETS = {
-    "openai": ["gpt-4o-mini", "gpt-4o", "o4-mini", "o3-2025-04-16",
-               "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    "openai": ["gpt-4o-mini", "gpt-4o", "o4-mini", "o3-2025-04-16", "gpt-5.5-2026-04-23",
+               "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5-nano-2025-08-07", "gpt-5.4-mini-2026-03-17"],
     "huggingface-api": [
         "Qwen/Qwen3-235B-A22B-Instruct-2507", "openai/gpt-oss-120b",
-        "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1",
+        "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1", 
+        "deepseek-ai/DeepSeek-V4-Pro", "DeepSeek-V4-Flash",
         "meta-llama/Llama-3.3-70B-Instruct", "microsoft/phi-4",
     ],
     "huggingface": ["microsoft/phi-4", "Qwen/Qwen2.5-7B-Instruct",
                     "meta-llama/Llama-3.2-3B-Instruct"],
-    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", 
+               "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite"],
 }
 
 
@@ -287,7 +290,8 @@ class PaperfoldRun:
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
 
-    def start_run(self, name: str, num_trials, num_folds, models: list) -> dict:
+    def start_run(self, name: str, num_trials, num_folds, models: list,
+                   direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
         if self.is_running():
             return {"ok": False, "error": "A paper-folding run is already in progress."}
         name = (name or "").strip()
@@ -296,6 +300,23 @@ class PaperfoldRun:
                      "Run name can only contain letters, numbers, underscores and hyphens."}
         if not models:
             return {"ok": False, "error": "Pick at least one model."}
+
+        direction_mode = (direction_mode or "real").strip().lower()
+        if direction_mode not in ("real", "fixed", "random"):
+            return {"ok": False, "error": "direction_mode must be 'real', 'fixed', or 'random'."}
+        if direction_mode == "fixed":
+            labels = {d: str((direction_labels or {}).get(d, "")).strip() for d in PAPERFOLD_DIRECTIONS}
+            if not all(labels.values()):
+                return {"ok": False, "error":
+                         "Fill in a placeholder name for all four directions, or switch to Real/Random."}
+            lowered = [v.lower() for v in labels.values()]
+            if len(set(lowered)) < 4:
+                return {"ok": False, "error": "Direction placeholder names must all be different."}
+            if any(v in PAPERFOLD_DIRECTIONS for v in lowered):
+                return {"ok": False, "error": "Placeholder names can't be the real direction words."}
+            direction_labels = labels
+        else:
+            direction_labels = None
 
         from config import ModelSpec
         from run_control import RunControl
@@ -320,6 +341,7 @@ class PaperfoldRun:
                 from paperfold.runner import PaperfoldRunner
                 runner = PaperfoldRunner(
                     name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
+                    direction_mode=direction_mode, direction_labels=direction_labels,
                     control=self.control,
                 )
                 runner.run()
@@ -498,7 +520,8 @@ class Handler(BaseHTTPRequestHandler):
                 b = self._body()
                 return self._send(200, PAPERFOLD.start_run(
                     b.get("name", ""), b.get("num_trials", 30),
-                    b.get("num_folds", 3), b.get("models", [])))
+                    b.get("num_folds", 3), b.get("models", []),
+                    b.get("direction_mode", "real"), b.get("direction_labels")))
             if p == "/api/paperfold/run/pause":
                 if PAPERFOLD.control: PAPERFOLD.control.pause()
                 return self._send(200, {"ok": True})
@@ -804,6 +827,11 @@ class Handler(BaseHTTPRequestHandler):
                     "plots": files,
                     "num_trials": results.get("num_trials"),
                     "num_folds": results.get("num_folds"),
+                    "direction_mode": results.get("direction_mode", "real"),
+                    # Only present (and only meaningful) for direction_mode
+                    # "fixed" - "random" mode has no single mapping to report,
+                    # a fresh one was drawn every trial.
+                    "direction_labels": (results.get("config_fingerprint") or {}).get("direction_labels"),
                     # Only name/backend survive in results.json - per-model
                     # tuning options (max_tokens, temperature, ...) were never
                     # persisted, so a "resume this run" prefill can restore

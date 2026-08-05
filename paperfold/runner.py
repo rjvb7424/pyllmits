@@ -37,10 +37,12 @@ from pathlib import Path
 
 from config import ModelSpec
 from models import build_model
-from paperfold.cognitive_test import CognitiveTest
+from paperfold.cognitive_test import CognitiveTest, random_direction_labels
 from run_control import RunControl, StopExperiment
 
 LOG = logging.getLogger("crafter_experiment.paperfold.run")
+
+DIRECTION_MODES = ("real", "fixed", "random")
 
 
 class PaperfoldRunner:
@@ -53,6 +55,8 @@ class PaperfoldRunner:
         num_folds: int,
         model_specs: list[ModelSpec],
         runs_dir: Path,
+        direction_mode: str = "real",
+        direction_labels: dict | None = None,
         control: "RunControl | None" = None,
     ):
         self.run_name = run_name
@@ -60,10 +64,21 @@ class PaperfoldRunner:
         self.num_folds = int(num_folds)
         self.model_specs = model_specs
         self.run_dir = Path(runs_dir) / run_name
+        # "real": use north/south/east/west as-is (default, matches the
+        #   original prototype exactly).
+        # "fixed": direction_labels is used for every trial in this run.
+        # "random": a fresh random mapping is drawn for every trial (still
+        #   explained at the top of that trial's own prompt) - the more
+        #   rigorous variant for testing whether a model's accuracy comes
+        #   from real spatial reasoning or from pattern-matching on the
+        #   literal words "north"/"south"/"east"/"west".
+        self.direction_mode = direction_mode if direction_mode in DIRECTION_MODES else "real"
+        self.direction_labels = direction_labels
         self.control = control
         # May raise ValueError if this run name already holds results for a
-        # different num_folds - trials from two different puzzle difficulties
-        # would give a meaningless combined accuracy number.
+        # different num_folds/direction scheme - trials answered under
+        # different puzzle difficulty or wording would give a meaningless
+        # combined accuracy number.
         self.results = self._load_or_init_results()
 
     @property
@@ -113,14 +128,16 @@ class PaperfoldRunner:
 
         try:
             for trial in range(done, total):
+                labels = self._trial_direction_labels()
                 if self.control is not None:
                     self.control.checkpoint()
                     self.control.update(
                         state="running", model=spec.name,
                         trial=trial + 1, num_trials=total,
+                        direction_labels=labels,
                     )
                 LOG.info("[%s] trial %d/%d ...", spec.name, trial + 1, total)
-                result = self._run_trial(spec, model, trial)
+                result = self._run_trial(spec, model, trial, labels)
                 record["trials"].append(result)
                 self._save()  # crash-safe: persist after every trial
                 LOG.info(
@@ -135,22 +152,38 @@ class PaperfoldRunner:
                         last_predicted=result["predicted_choice"],
                         last_correct_choice=result["correct_choice"],
                         last_is_correct=result["is_correct"],
+                        direction_labels=labels,
                     )
         finally:
             model.unload()
 
+    def _trial_direction_labels(self) -> dict | None:
+        """The {direction: placeholder} mapping for the next trial, or None
+        to use the real direction names. Computed once per trial (not inside
+        _run_trial) so the exact same mapping used for the puzzle is also
+        what gets reported to the polled status - never two independently
+        rolled "random" mappings for one trial."""
+        if self.direction_mode == "fixed":
+            return dict(self.direction_labels) if self.direction_labels else None
+        if self.direction_mode == "random":
+            return random_direction_labels()
+        return None
+
     # =========================================================================
     #  One trial
     # =========================================================================
-    def _run_trial(self, spec: ModelSpec, model, trial_index: int) -> dict:
+    def _run_trial(self, spec: ModelSpec, model, trial_index: int, direction_labels: dict | None) -> dict:
         model.reset()  # clear any conversation memory so trials don't bleed together
-        test = CognitiveTest()
+        test = CognitiveTest(direction_labels=direction_labels)
         result = test.run(num_folds=self.num_folds, solver=self._solver_for(model))
         result["trial"] = trial_index + 1
         # Tag the result with the model we intended to test, even if the
         # solver call failed and couldn't report its own model_version. This
         # keeps per-model resume counting accurate (mirrors legacy run.py).
         result["model_version"] = spec.name
+        # Ground truth (fold_history) is always the real direction names -
+        # this records what was actually shown to the model that trial.
+        result["direction_labels"] = direction_labels
         return result
 
     @staticmethod
@@ -172,17 +205,23 @@ class PaperfoldRunner:
     # =========================================================================
     #  Persistence
     # =========================================================================
+    def _fingerprint(self) -> dict:
+        fp = {"num_folds": self.num_folds, "direction_mode": self.direction_mode}
+        if self.direction_mode == "fixed":
+            fp["direction_labels"] = self.direction_labels
+        return fp
+
     def _load_or_init_results(self) -> dict:
-        fingerprint = {"num_folds": self.num_folds}
+        fingerprint = self._fingerprint()
         if self.results_path.exists():
             existing = json.loads(self.results_path.read_text())
             old_fp = existing.get("config_fingerprint")
             if old_fp is not None and old_fp != fingerprint:
                 raise ValueError(
                     f"'{self.run_name}' already has results with a different "
-                    f"num_folds ({old_fp.get('num_folds')} vs {self.num_folds}). "
-                    f"Merging them would give a meaningless accuracy number. "
-                    f"Pick a different run name, or delete {self.run_dir} to start over."
+                    f"setup ({old_fp} vs {fingerprint}). Merging them would "
+                    f"give a meaningless accuracy number. Pick a different "
+                    f"run name, or delete {self.run_dir} to start over."
                 )
             LOG.info("Found existing results - resuming (config matches).")
             existing.setdefault("config_fingerprint", fingerprint)
@@ -190,12 +229,14 @@ class PaperfoldRunner:
             # value would otherwise stay stale and mislead the plots.
             existing["num_trials"] = self.num_trials
             existing["num_folds"] = self.num_folds
+            existing["direction_mode"] = self.direction_mode
             return existing
         return {
             "experiment": self.run_name,
             "config_fingerprint": fingerprint,
             "num_trials": self.num_trials,
             "num_folds": self.num_folds,
+            "direction_mode": self.direction_mode,
             "created": _now(),
             "updated": _now(),
             "models": {},
