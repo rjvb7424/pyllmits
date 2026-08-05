@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from config import ModelSpec
@@ -80,10 +81,28 @@ class PaperfoldRunner:
         # different puzzle difficulty or wording would give a meaningless
         # combined accuracy number.
         self.results = self._load_or_init_results()
+        # Every configured model gets a record immediately, not lazily as
+        # _run_model reaches it - otherwise a crash partway through a batch
+        # (or just constructing a runner to save a setup without running it)
+        # would leave the not-yet-started models completely absent from
+        # results.json, which is exactly what silently dropped them from the
+        # "resume this run" picker.
+        self._ensure_model_records()
 
     @property
     def results_path(self) -> Path:
         return self.run_dir / "results.json"
+
+    def _ensure_model_records(self) -> None:
+        for spec in self.model_specs:
+            self.results["models"].setdefault(
+                spec.name, {"backend": spec.backend, "slug": spec.slug, "error": None, "trials": []}
+            )
+
+    def save(self) -> None:
+        """Persist the current setup/results to disk. Safe to call without
+        ever running anything - used to save a setup for later."""
+        self._save()
 
     # =========================================================================
     #  Top-level loop
@@ -125,6 +144,10 @@ class PaperfoldRunner:
             record["error"] = f"load failed: {exc}"
             self._save()
             return
+        # A previous attempt's error (load failure or a mid-trial crash) no
+        # longer applies once loading succeeds again - don't leave a stale
+        # message sitting next to trials that are now succeeding.
+        record["error"] = None
 
         try:
             for trial in range(done, total):
@@ -134,10 +157,21 @@ class PaperfoldRunner:
                     self.control.update(
                         state="running", model=spec.name,
                         trial=trial + 1, num_trials=total,
-                        direction_labels=labels,
+                        direction_labels=labels, trial_started_at=time.time(),
                     )
                 LOG.info("[%s] trial %d/%d ...", spec.name, trial + 1, total)
-                result = self._run_trial(spec, model, trial, labels)
+                try:
+                    result = self._run_trial(spec, model, trial, labels)
+                except Exception as exc:
+                    # Isolate the failure to this one model - e.g. a transient
+                    # provider error - rather than aborting every other model
+                    # in the run. Trials already completed for this model (and
+                    # every other model's progress) stay intact; this model
+                    # simply resumes from here on the next Start.
+                    LOG.error("[%s] trial %d failed: %s", spec.name, trial + 1, exc)
+                    record["error"] = f"trial {trial + 1} failed: {exc}"
+                    self._save()
+                    break
                 record["trials"].append(result)
                 self._save()  # crash-safe: persist after every trial
                 LOG.info(
@@ -153,6 +187,10 @@ class PaperfoldRunner:
                         last_correct_choice=result["correct_choice"],
                         last_is_correct=result["is_correct"],
                         direction_labels=labels,
+                        trial_started_at=None,
+                        last_elapsed_seconds=result["elapsed_seconds"],
+                        last_raw_response=result["raw_response"],
+                        last_prompt=result["prompt"],
                     )
         finally:
             model.unload()

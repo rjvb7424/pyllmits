@@ -290,41 +290,56 @@ class PaperfoldRun:
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
 
-    def start_run(self, name: str, num_trials, num_folds, models: list,
-                   direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
-        if self.is_running():
-            return {"ok": False, "error": "A paper-folding run is already in progress."}
+    @staticmethod
+    def _validate_setup(name: str, models: list, direction_mode: str, direction_labels: dict | None):
+        """Shared by start_run and save_setup - both send/validate the exact
+        same shape, so a saved setup and a launched run can never disagree
+        about what's valid. Returns (specs, direction_mode, direction_labels,
+        error_dict_or_None).
+        """
         name = (name or "").strip()
         if not EXPERIMENT_NAME_RE.match(name):
-            return {"ok": False, "error":
+            return None, None, None, {"ok": False, "error":
                      "Run name can only contain letters, numbers, underscores and hyphens."}
         if not models:
-            return {"ok": False, "error": "Pick at least one model."}
+            return None, None, None, {"ok": False, "error": "Pick at least one model."}
 
         direction_mode = (direction_mode or "real").strip().lower()
         if direction_mode not in ("real", "fixed", "random"):
-            return {"ok": False, "error": "direction_mode must be 'real', 'fixed', or 'random'."}
+            return None, None, None, {"ok": False, "error": "direction_mode must be 'real', 'fixed', or 'random'."}
         if direction_mode == "fixed":
             labels = {d: str((direction_labels or {}).get(d, "")).strip() for d in PAPERFOLD_DIRECTIONS}
             if not all(labels.values()):
-                return {"ok": False, "error":
+                return None, None, None, {"ok": False, "error":
                          "Fill in a placeholder name for all four directions, or switch to Real/Random."}
             lowered = [v.lower() for v in labels.values()]
             if len(set(lowered)) < 4:
-                return {"ok": False, "error": "Direction placeholder names must all be different."}
+                return None, None, None, {"ok": False, "error": "Direction placeholder names must all be different."}
             if any(v in PAPERFOLD_DIRECTIONS for v in lowered):
-                return {"ok": False, "error": "Placeholder names can't be the real direction words."}
+                return None, None, None, {"ok": False, "error": "Placeholder names can't be the real direction words."}
             direction_labels = labels
         else:
             direction_labels = None
 
         from config import ModelSpec
-        from run_control import RunControl
-
         try:
             specs = [ModelSpec.from_dict(dict(m)) for m in models]
         except Exception as exc:
-            return {"ok": False, "error": f"Invalid model list: {exc}"}
+            return None, None, None, {"ok": False, "error": f"Invalid model list: {exc}"}
+
+        return specs, direction_mode, direction_labels, None
+
+    def start_run(self, name: str, num_trials, num_folds, models: list,
+                   direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
+        if self.is_running():
+            return {"ok": False, "error": "A paper-folding run is already in progress."}
+        specs, direction_mode, direction_labels, err = self._validate_setup(
+            name, models, direction_mode, direction_labels)
+        if err:
+            return err
+        name = (name or "").strip()
+
+        from run_control import RunControl
 
         self.control = RunControl()
         self.run_name = name
@@ -352,6 +367,36 @@ class PaperfoldRun:
         self.thread = threading.Thread(target=_worker, daemon=True)
         self.control.update(state="running")
         self.thread.start()
+        return {"ok": True}
+
+    def save_setup(self, name: str, num_trials, num_folds, models: list,
+                    direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
+        """Write a run's configuration to results.json without running
+        anything - no model is built, no API is called. Lets a setup (name,
+        trials, folds, direction mode, model list) be saved and come back
+        exactly as left, and - since PaperfoldRunner now records every
+        configured model up front rather than lazily as it's reached - means
+        the full model list survives even if a later run crashes partway
+        through, instead of the unreached models silently vanishing from the
+        "resume this run" list.
+        """
+        specs, direction_mode, direction_labels, err = self._validate_setup(
+            name, models, direction_mode, direction_labels)
+        if err:
+            return err
+        name = (name or "").strip()
+        if self.is_running() and self.run_name == name:
+            return {"ok": False, "error": "That run is currently in progress - stop it first."}
+
+        try:
+            from paperfold.runner import PaperfoldRunner
+            runner = PaperfoldRunner(
+                name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
+                direction_mode=direction_mode, direction_labels=direction_labels,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        runner.save()
         return {"ok": True}
 
     def stop_run(self):
@@ -519,6 +564,12 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/paperfold/run/start":
                 b = self._body()
                 return self._send(200, PAPERFOLD.start_run(
+                    b.get("name", ""), b.get("num_trials", 30),
+                    b.get("num_folds", 3), b.get("models", []),
+                    b.get("direction_mode", "real"), b.get("direction_labels")))
+            if p == "/api/paperfold/setup/save":
+                b = self._body()
+                return self._send(200, PAPERFOLD.save_setup(
                     b.get("name", ""), b.get("num_trials", 30),
                     b.get("num_folds", 3), b.get("models", []),
                     b.get("direction_mode", "real"), b.get("direction_labels")))

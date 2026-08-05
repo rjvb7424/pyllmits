@@ -16,6 +16,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Pyllmits</title>
+<link rel="icon" type="image/png" href="/api/logo.png"/>
 <style>
   :root{
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s8:32px; --s12:48px;
@@ -287,7 +288,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .chip .v{font-family:var(--mono);font-size:15px;margin-top:3px;color:var(--text)}
   .chip .v.accent{color:var(--accent)}
   .chip .v.bad{color:var(--danger)}
-  #lvState,#lvResponse,#lvPrompt{white-space:pre-wrap;word-break:break-word;max-height:40vh}
+  #lvState,#lvResponse,#lvPrompt,#pfRawResponse,#pfRawPrompt{white-space:pre-wrap;word-break:break-word;max-height:40vh}
   @media (max-width:900px){.live-grid{grid-template-columns:1fr}}
 
   .plot{max-width:100%;border:1px solid var(--line);border-radius:var(--radius);margin:var(--s2) auto;background:#fff;display:block}
@@ -422,7 +423,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab" data-tab="providers" role="tab">Providers</button>
   </nav>
   <div style="flex:1"></div>
-  <button id="hdrStatus" onclick="go('run')" title="idle" aria-label="Run status - idle">
+  <button id="hdrStatus" onclick="hdrStatusClick()" title="idle" aria-label="Run status - idle">
     <span class="status-dot idle" id="statusDot"></span>
     <span class="status-label" id="statusLabel">idle</span>
     <span class="status-detail" id="statusDetail"></span>
@@ -584,9 +585,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
       <label for="pfSetupPick">Resume or edit a previous run</label>
       <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Picking a run loads its settings below. Raise trials to run more (already-completed trials are skipped); add a new model and only that one runs, from trial 1.</div>
-      <select id="pfSetupPick" onchange="pfPickSetupRun(this.value)">
-        <option value="">-- start a new run --</option>
-      </select>
+      <div class="flex">
+        <select id="pfSetupPick" onchange="pfPickSetupRun(this.value)" style="flex:1;text-overflow:ellipsis">
+          <option value="">-- start a new run --</option>
+        </select>
+        <button class="btn-secondary btn-sm" onclick="pfSaveSetup()" title="Save this setup to disk without running any trials - handy for reserving a name and model list you'll come back to">Save setup</button>
+        <button class="btn-danger btn-sm" onclick="pfDeleteRun('pfSetupPick')">Delete</button>
+      </div>
 
       <div class="row" style="margin-top:var(--s4)">
         <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
@@ -628,8 +633,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="chip"><div class="k">State</div><div class="v" id="pfState">idle</div></div>
         <div class="chip"><div class="k">Model</div><div class="v" id="pfModel">&ndash;</div></div>
         <div class="chip"><div class="k">Trial</div><div class="v" id="pfTrial">&ndash;</div></div>
+        <div class="chip"><div class="k">This question</div><div class="v accent" id="pfTimerCurrent">&ndash;</div></div>
+        <div class="chip"><div class="k">Previous question</div><div class="v" id="pfTimerPrev">&ndash;</div></div>
+      </div>
+      <div class="live-chips">
         <div class="chip"><div class="k">Last answer</div><div class="v" id="pfLast">&ndash;</div></div>
         <div class="chip"><div class="k">Directions this trial</div><div class="v mono" id="pfDirLive" style="font-size:12px">&ndash;</div></div>
+      </div>
+      <div class="row">
+        <div class="card"><h3>Model raw response</h3><pre id="pfRawResponse">&ndash;</pre></div>
+        <div class="card"><h3>Prompt sent last trial</h3><pre id="pfRawPrompt">&ndash;</pre></div>
       </div>
     </div>
 
@@ -639,7 +652,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="flex">
           <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
           <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
-          <button class="btn-danger" onclick="pfDeleteRun()">Delete run</button>
+          <button class="btn-danger" onclick="pfDeleteRun('pfRunPick')">Delete run</button>
         </div>
       </div>
       <div id="pfPlots"></div>
@@ -1005,21 +1018,45 @@ async function runRestart(){await api('/api/run/stop','POST');
 async function runCancel(){await api('/api/run/stop','POST');
   runCancelled=true;go('configs');}
 
-// ---------- Header status dot ----------
-function statusMeta(s){
-  if(runCancelled)return{cls:'cancelled',label:'cancelled'};
+// ---------- Header status dot (reflects Crafter AND Paper Folding - whichever
+// is more "active" drives the dot's colour/label; the detail line shows both
+// at once if both happen to be running/paused, since they're fully
+// independent and can be going simultaneously) ----------
+let LAST_CRAFTER_STATUS={state:'idle'}, LAST_PAPERFOLD_STATUS={state:'idle'};
+const STATUS_RANK={running:0,stopping:0,paused:1,error:2,cancelled:2,stopped:3,finished:4,idle:5};
+function oneStatusMeta(s,cancelled){
+  if(cancelled)return{cls:'cancelled',label:'cancelled'};
   const st=s.state||'idle';
   if(['running','paused','stopped','finished','error'].includes(st))return{cls:st,label:st};
   return{cls:'idle',label:'idle'};
 }
-function updateStatusDot(s){
-  const meta=statusMeta(s);
+function craftDetail(s){
+  return s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
+}
+function pfHdrDetail(s){
+  return s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials}`:(s.error||'');
+}
+function updateStatusDot(){
+  const c=LAST_CRAFTER_STATUS, p=LAST_PAPERFOLD_STATUS;
+  const cMeta=oneStatusMeta(c,runCancelled), pMeta=oneStatusMeta(p,false);
+  const craftLeads=(STATUS_RANK[cMeta.cls]??5)<=(STATUS_RANK[pMeta.cls]??5);
+  const meta=craftLeads?cMeta:pMeta;
+
   $('statusDot').className='status-dot '+meta.cls;
   $('statusLabel').textContent=meta.label;
-  const detail=s.model?`${s.model} \u00b7 trial ${s.trial}/${s.num_trials} \u00b7 turn ${s.turn}/${s.max_turns}`:(s.error||'');
+
+  const parts=[];
+  if(['running','paused'].includes(cMeta.cls))parts.push('Crafter: '+craftDetail(c));
+  if(['running','paused'].includes(pMeta.cls))parts.push('Paper Folding: '+pfHdrDetail(p));
+  const detail=parts.length?parts.join('  \u00b7  '):((craftLeads?c:p).error||'');
+
   $('statusDetail').textContent=detail;
   const title=meta.label+(detail?(' \u2014 '+detail):'');
   $('hdrStatus').title=title;$('hdrStatus').setAttribute('aria-label','Run status - '+title);
+}
+function hdrStatusClick(){
+  const active=s=>['running','paused'].includes(s.state||'idle');
+  go(active(LAST_PAPERFOLD_STATUS)&&!active(LAST_CRAFTER_STATUS)?'paperfold':'run');
 }
 
 // ---------- Run tab live view (native, not an iframe) ----------
@@ -1053,7 +1090,8 @@ function updateLiveView(s){
 
 async function pollRunStatus(){
   const s=await api('/api/run/status');
-  updateStatusDot(s);
+  LAST_CRAFTER_STATUS=s;
+  updateStatusDot();
   updateLiveView(s);
   if(['finished','stopped','error'].includes(s.state)&&!s.running&&lastRunState!==s.state){
     if(s.state=='finished'){toast('Run finished \u2014 generating graphs\u2026','ok');
@@ -1219,23 +1257,29 @@ function pfAddModel(){PFCFG.models.push(pfDefaultModel());pfRenderModels();}
 function pfDelModel(i){PFCFG.models.splice(i,1);pfRenderModels();}
 
 // ---------- Paper folding: run controls ----------
-let pfLastState=null;
-async function pfRunGo(){
+// Shared by Start and Save setup, so both send the exact same shape and
+// validate the same way - the only difference is which route gets it.
+function pfBuildRunBody(){
   const name=($('pf_name').value||'').trim();
-  if(!name){toast('Enter a run name','err');return;}
+  if(!name)return{error:'Enter a run name'};
   const models=(PFCFG.models||[]).filter(m=>m.name);
-  if(!models.length){toast('Add at least one model (with a model id picked)','err');return;}
+  if(!models.length)return{error:'Add at least one model (with a model id picked)'};
   const direction_mode=$('pf_dirmode').value;
   let direction_labels=null;
   if(direction_mode=='fixed'){
     direction_labels={north:$('pf_dir_north').value.trim(),south:$('pf_dir_south').value.trim(),
                        east:$('pf_dir_east').value.trim(),west:$('pf_dir_west').value.trim()};
     const vals=Object.values(direction_labels);
-    if(vals.some(v=>!v)){toast('Fill in all four direction placeholder names, or switch to Real/Random','err');return;}
-    if(new Set(vals.map(v=>v.toLowerCase())).size<4){toast('Direction placeholder names must all be different','err');return;}
+    if(vals.some(v=>!v))return{error:'Fill in all four direction placeholder names, or switch to Real/Random'};
+    if(new Set(vals.map(v=>v.toLowerCase())).size<4)return{error:'Direction placeholder names must all be different'};
   }
-  const body={name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models,
-    direction_mode, direction_labels};
+  return{body:{name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models,
+    direction_mode, direction_labels}};
+}
+let pfLastState=null;
+async function pfRunGo(){
+  const {body,error}=pfBuildRunBody();
+  if(error){toast(error,'err');return;}
   const r=await api('/api/paperfold/run/start','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
   toast('Paper-folding run started','ok');
@@ -1243,10 +1287,30 @@ async function pfRunGo(){
 function pfRunPause(){api('/api/paperfold/run/pause','POST');}
 function pfRunResume(){api('/api/paperfold/run/resume','POST');}
 function pfRunStop(){api('/api/paperfold/run/stop','POST');toast('Stopping…');}
+// Writes the current Setup form to disk - no models built, no API calls - so
+// a model list/config can be reserved and come back exactly as left, and so
+// a run that later crashes partway through still has every configured model
+// on record (not just the ones it got to before the crash).
+async function pfSaveSetup(){
+  const {body,error}=pfBuildRunBody();
+  if(error){toast(error,'err');return;}
+  const r=await api('/api/paperfold/setup/save','POST',body);
+  if(!r.ok){toast(r.error,'err');return;}
+  toast('Setup saved (no trials run yet)','ok');
+  await pfLoadRuns();
+  $('pfSetupPick').value=body.name;
+}
 
-// Its own status panel, polled independently - deliberately NOT the header
-// #hdrStatus pill, which stays Crafter-only, so the two experiments' run
-// states are never visually conflated into one indicator.
+// A local stopwatch, not the 700ms poll cadence - PF_TRIAL_STARTED_AT (the
+// server's timestamp for when the in-flight trial began) is refreshed each
+// poll, but the displayed number ticks smoothly in between via its own timer.
+let PF_TRIAL_STARTED_AT=null, PF_LAST_ELAPSED=null;
+function pfTickTimer(){
+  $('pfTimerCurrent').textContent=PF_TRIAL_STARTED_AT!=null
+    ?(Date.now()/1000-PF_TRIAL_STARTED_AT).toFixed(1)+'s':'–';
+}
+setInterval(pfTickTimer,100);
+
 function pfUpdateStatus(s){
   $('pfState').textContent=s.state||'idle';
   $('pfModel').textContent=s.model||'–';
@@ -1257,9 +1321,19 @@ function pfUpdateStatus(s){
     last.classList.toggle('bad',!s.last_is_correct);
   }else{last.textContent='–';last.classList.remove('bad');}
   $('pfDirLive').textContent=s.model?pfFormatDirLabels(s.direction_labels):'–';
+
+  PF_TRIAL_STARTED_AT=(s.state=='running'&&s.trial_started_at)?s.trial_started_at:null;
+  if(s.last_elapsed_seconds!=null)PF_LAST_ELAPSED=s.last_elapsed_seconds;
+  $('pfTimerPrev').textContent=PF_LAST_ELAPSED!=null?PF_LAST_ELAPSED.toFixed(2)+'s':'–';
+  pfTickTimer();
+
+  $('pfRawResponse').textContent=s.last_raw_response||'–';
+  $('pfRawPrompt').textContent=s.last_prompt||'–';
 }
 async function pfPollStatus(){
   const s=await api('/api/paperfold/run/status');
+  LAST_PAPERFOLD_STATUS=s;
+  updateStatusDot();
   pfUpdateStatus(s);
   if(['finished','stopped','error'].includes(s.state)&&!s.running&&pfLastState!==s.state){
     if(s.state=='finished'){toast('Paper-folding run finished — generating graphs…','ok');
@@ -1347,8 +1421,8 @@ function pfPickSetupRun(name){
   $('pfRunPick').value=name; pfShowRun();
   toast('Loaded '+run.name+' - raise trials or add a model, then Start to continue it','ok');
 }
-async function pfDeleteRun(){
-  const name=$('pfRunPick').value;
+async function pfDeleteRun(selectId){
+  const name=$(selectId||'pfRunPick').value;
   if(!name){toast('Pick a run first','err');return;}
   if(!confirm('Delete paper-folding run \''+name+'\'? This permanently deletes its results and plots. This cannot be undone.'))return;
   const r=await api('/api/paperfold/run/delete','POST',{run:name});
