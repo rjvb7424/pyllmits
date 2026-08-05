@@ -581,7 +581,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
     <div class="card"><h3>Setup</h3>
       <div class="sub" style="margin-bottom:var(--s4)">Each puzzle is freshly randomised (no fixed seed) - accuracy is meant to average out over enough trials, not to be reproduced trial-for-trial.</div>
-      <div class="row">
+
+      <label for="pfSetupPick">Resume or edit a previous run</label>
+      <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Picking a run loads its settings below. Raise trials to run more (already-completed trials are skipped); add a new model and only that one runs, from trial 1.</div>
+      <select id="pfSetupPick" onchange="pfPickSetupRun(this.value)">
+        <option value="">-- start a new run --</option>
+      </select>
+
+      <div class="row" style="margin-top:var(--s4)">
         <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
         <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
         <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
@@ -595,13 +602,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <option value="random">Random placeholders (new words every trial)</option>
       </select>
       <div id="pfDirLabelsBox" class="hidden" style="margin-top:var(--s3)">
-        <div class="row">
-          <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
-          <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
-          <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
-          <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
+        <div class="flex" style="align-items:flex-end">
+          <div class="row" style="flex:1;min-width:280px">
+            <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
+            <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
+            <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
+            <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
+          </div>
+          <button class="btn-secondary btn-sm" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button>
         </div>
-        <button class="btn-secondary btn-sm" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button>
       </div>
 
       <label>Models</label>
@@ -631,7 +640,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="sub">Result plots for a paper-folding run - regenerate any time, independently of running new trials.</div>
         <div class="flex">
           <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
-          <button class="btn-secondary" onclick="pfLoadIntoSetup()" title="Prefill Setup above with this run's name, trial/fold counts and model list (backend only - per-model tuning options aren't saved)">Load into setup</button>
           <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
           <button class="btn-danger" onclick="pfDeleteRun()">Delete run</button>
         </div>
@@ -1273,11 +1281,20 @@ async function pfAnalyzeAfterRun(name){
 }
 
 // ---------- Paper folding: graphs ----------
+// Two independent pickers sharing one run list - same split Crafter uses
+// between its Run tab's config picker and its Graphs tab's run picker:
+// pfSetupPick answers "what do I resume/edit", pfRunPick answers "whose
+// plots am I looking at". They usually end up pointing at the same run, but
+// don't have to (e.g. comparing an old run's graphs while setting up a new
+// one), so they're kept as two selects rather than one shared value.
 async function pfLoadRuns(){const r=await api('/api/paperfold/runs');
-  const sel=$('pfRunPick'); const prev=sel.value;
-  sel.innerHTML='<option value="">-- pick a run --</option>'+
+  const prevGraph=$('pfRunPick').value, prevSetup=$('pfSetupPick').value;
+  $('pfRunPick').innerHTML='<option value="">-- pick a run --</option>'+
     r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
-  sel.value=prev;
+  $('pfSetupPick').innerHTML='<option value="">-- start a new run --</option>'+
+    r.runs.map(x=>`<option value="${x.name}">${x.name}</option>`).join('');
+  $('pfRunPick').value=prevGraph;
+  $('pfSetupPick').value=prevSetup;
   window._pfRuns=r.runs;}
 function pfShowRun(){const name=$('pfRunPick').value;const run=(window._pfRuns||[]).find(r=>r.name==name);const bust=Date.now();
   if(!name){$('pfPlots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
@@ -1289,12 +1306,16 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
-// Prefills Setup from a past run - name/backend only (per-model tuning
-// options like max_tokens/temperature were never persisted in results.json,
-// so this can't restore them, only the model pool itself).
-function pfLoadIntoSetup(){
-  const name=$('pfRunPick').value; const run=(window._pfRuns||[]).find(r=>r.name==name);
-  if(!run){toast('Pick a run first','err');return;}
+
+// ---------- Paper folding: resume/edit a previous run from Setup ----------
+// Loads a past run's settings into the form so Start continues it: raising
+// Trials makes already-complete models do just the difference (each model
+// resumes from however many trials it already has - see
+// PaperfoldRunner._run_model), and a newly added model runs in full since it
+// has none yet. Only name/backend survive in results.json - per-model tuning
+// options (max_tokens, temperature, ...) were never persisted, so those come
+// back at their defaults, not whatever they were set to originally.
+function pfApplyRunToSetup(run){
   $('pf_name').value=run.name;
   if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
   if(run.num_folds!=null)$('pf_folds').value=run.num_folds;
@@ -1308,7 +1329,25 @@ function pfLoadIntoSetup(){
   }
   PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096}));
   pfRenderModels();
-  toast('Loaded '+run.name+' into setup (model list only - tuning options weren’t saved)','ok');
+}
+function pfResetSetup(){
+  $('pf_name').value='';
+  $('pf_trials').value=30;
+  $('pf_folds').value=3;
+  $('pf_dirmode').value='real';
+  pfUpdateDirMode();
+  PFCFG.models=[pfDefaultModel()];
+  pfRenderModels();
+}
+function pfPickSetupRun(name){
+  if(!name){pfResetSetup();return;}
+  const run=(window._pfRuns||[]).find(r=>r.name==name);
+  if(!run){toast('Could not find that run','err');return;}
+  pfApplyRunToSetup(run);
+  // Keep the Graphs picker pointed at the same run, so its existing plots
+  // are right there while you decide how to change it.
+  $('pfRunPick').value=name; pfShowRun();
+  toast('Loaded '+run.name+' - raise trials or add a model, then Start to continue it','ok');
 }
 async function pfDeleteRun(){
   const name=$('pfRunPick').value;
@@ -1317,6 +1356,7 @@ async function pfDeleteRun(){
   const r=await api('/api/paperfold/run/delete','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   toast('Deleted run '+name,'ok');
+  if($('pfSetupPick').value==name)pfResetSetup();
   await pfLoadRuns(); pfShowRun();
 }
 
