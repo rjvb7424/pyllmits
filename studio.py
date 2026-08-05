@@ -281,6 +281,35 @@ STUDIO = Studio()
 #  its own singleton rather than a field on Studio, so a Crafter run and a
 #  paper-folding run can proceed at the same time with no shared lock)
 # =============================================================================
+def _rename_paperfold_run_dir(old_name: str | None, new_name: str) -> str | None:
+    """Move a paper-folding run's folder from old_name to new_name in place,
+    so editing the Run name field and saving/starting again renames the run
+    instead of leaving the old name behind as an orphan while a fresh run is
+    silently created under the new one. Returns an error message, or None on
+    success (including when there's simply nothing to rename)."""
+    if not old_name or old_name == new_name:
+        return None
+    old_dir = PAPERFOLD_RUNS_DIR / old_name
+    if not old_dir.exists():
+        return None  # nothing under the old name - never saved, or already renamed
+    new_dir = PAPERFOLD_RUNS_DIR / new_name
+    if new_dir.exists():
+        return f"Can't rename to '{new_name}': a run with that name already exists."
+    new_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(old_dir), str(new_dir))
+    # Keep results.json's own "experiment" field consistent with the folder
+    # name, which is what every listing/picker actually treats as authoritative.
+    rp = new_dir / "results.json"
+    if rp.exists():
+        try:
+            data = json.loads(rp.read_text())
+            data["experiment"] = new_name
+            rp.write_text(json.dumps(data, indent=2))
+        except Exception:
+            pass
+    return None
+
+
 class PaperfoldRun:
     def __init__(self):
         self.control = None      # run_control.RunControl while running
@@ -330,7 +359,8 @@ class PaperfoldRun:
         return specs, direction_mode, direction_labels, None
 
     def start_run(self, name: str, num_trials, num_folds, models: list,
-                   direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
+                   direction_mode: str = "real", direction_labels: dict | None = None,
+                   old_name: str | None = None) -> dict:
         if self.is_running():
             return {"ok": False, "error": "A paper-folding run is already in progress."}
         specs, direction_mode, direction_labels, err = self._validate_setup(
@@ -338,6 +368,13 @@ class PaperfoldRun:
         if err:
             return err
         name = (name or "").strip()
+
+        # The Run name field was edited since this setup was loaded/saved -
+        # rename its folder in place rather than leaving the old name behind
+        # as an orphan while a fresh one gets created under the new name.
+        rename_error = _rename_paperfold_run_dir(old_name, name)
+        if rename_error:
+            return {"ok": False, "error": rename_error}
 
         from run_control import RunControl
 
@@ -370,7 +407,8 @@ class PaperfoldRun:
         return {"ok": True}
 
     def save_setup(self, name: str, num_trials, num_folds, models: list,
-                    direction_mode: str = "real", direction_labels: dict | None = None) -> dict:
+                    direction_mode: str = "real", direction_labels: dict | None = None,
+                    old_name: str | None = None) -> dict:
         """Write a run's configuration to results.json without running
         anything - no model is built, no API is called. Lets a setup (name,
         trials, folds, direction mode, model list) be saved and come back
@@ -385,8 +423,12 @@ class PaperfoldRun:
         if err:
             return err
         name = (name or "").strip()
-        if self.is_running() and self.run_name == name:
+        if self.is_running() and self.run_name in (name, old_name):
             return {"ok": False, "error": "That run is currently in progress - stop it first."}
+
+        rename_error = _rename_paperfold_run_dir(old_name, name)
+        if rename_error:
+            return {"ok": False, "error": rename_error}
 
         try:
             from paperfold.runner import PaperfoldRunner
@@ -566,13 +608,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, PAPERFOLD.start_run(
                     b.get("name", ""), b.get("num_trials", 30),
                     b.get("num_folds", 3), b.get("models", []),
-                    b.get("direction_mode", "real"), b.get("direction_labels")))
+                    b.get("direction_mode", "real"), b.get("direction_labels"),
+                    b.get("old_name")))
             if p == "/api/paperfold/setup/save":
                 b = self._body()
                 return self._send(200, PAPERFOLD.save_setup(
                     b.get("name", ""), b.get("num_trials", 30),
                     b.get("num_folds", 3), b.get("models", []),
-                    b.get("direction_mode", "real"), b.get("direction_labels")))
+                    b.get("direction_mode", "real"), b.get("direction_labels"),
+                    b.get("old_name")))
+            if p == "/api/paperfold/setup/duplicate":
+                status, result = self._duplicate_paperfold_run(self._body().get("run", ""))
+                return self._send(status, result)
             if p == "/api/paperfold/run/pause":
                 if PAPERFOLD.control: PAPERFOLD.control.pause()
                 return self._send(200, {"ok": True})
@@ -902,6 +949,49 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that run is currently in progress - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
+
+    def _duplicate_paperfold_run(self, run_name: str) -> tuple[int, dict]:
+        """Copy a run's SETUP (trial/fold counts, direction mode, model
+        names+backends) into a fresh run named '<name>_copy' - no trial data
+        carries over, same "start clean" spirit as Crafter's config duplicate.
+        Per-model tuning options (max_tokens, temperature, ...) aren't stored
+        in results.json, so - like the "resume this run" picker - only each
+        model's name and backend come along.
+        """
+        src_dir = self._paperfold_run_dir(run_name)
+        if src_dir is None or not src_dir.exists():
+            return 404, {"ok": False, "error": "not found"}
+        try:
+            src = json.loads((src_dir / "results.json").read_text())
+        except Exception as exc:
+            return 500, {"ok": False, "error": f"Could not read that run's setup: {exc}"}
+
+        new_name = f"{run_name}_copy"
+        n = 2
+        while (PAPERFOLD_RUNS_DIR / new_name).exists():
+            new_name = f"{run_name}_copy{n}"
+            n += 1
+
+        models = src.get("models", {})
+        if not models:
+            return 400, {"ok": False, "error": "That run has no models to copy."}
+
+        from config import ModelSpec
+        specs = [ModelSpec(name=mname, backend=rec.get("backend") or "openai", options={})
+                 for mname, rec in models.items()]
+        fingerprint = src.get("config_fingerprint") or {}
+
+        try:
+            from paperfold.runner import PaperfoldRunner
+            runner = PaperfoldRunner(
+                new_name, src.get("num_trials", 30), src.get("num_folds", 3), specs,
+                PAPERFOLD_RUNS_DIR, direction_mode=src.get("direction_mode", "real"),
+                direction_labels=fingerprint.get("direction_labels"),
+            )
+        except ValueError as exc:
+            return 400, {"ok": False, "error": str(exc)}
+        runner.save()
+        return 200, {"ok": True, "name": new_name}
 
     def _regen_paperfold_graphs(self, run_name):
         """Rebuild all plots for a paper-folding run from its results.json (no

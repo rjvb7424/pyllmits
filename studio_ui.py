@@ -585,41 +585,45 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
       <label for="pfSetupPick">Resume or edit a previous run</label>
       <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Picking a run loads its settings below. Raise trials to run more (already-completed trials are skipped); add a new model and only that one runs, from trial 1.</div>
-      <div class="flex">
+      <div class="flex" style="align-items:center">
         <select id="pfSetupPick" onchange="pfPickSetupRun(this.value)" style="flex:1;text-overflow:ellipsis">
           <option value="">-- start a new run --</option>
         </select>
-        <button class="btn-secondary btn-sm" onclick="pfSaveSetup()" title="Save this setup to disk without running any trials - handy for reserving a name and model list you'll come back to">Save setup</button>
-        <button class="btn-danger btn-sm" onclick="pfDeleteRun('pfSetupPick')">Delete</button>
+        <button class="btn-secondary btn-sm" style="padding:0 var(--s4)" onclick="pfDuplicateSetup()" title="Copy this run's setup (trials, folds, direction mode, model list) into a new run - no trial data carries over">Duplicate</button>
+        <button class="btn-secondary btn-sm" style="padding:0 var(--s4)" onclick="pfSaveSetup()" title="Save this setup to disk without running any trials - handy for reserving a name and model list you'll come back to">Save setup</button>
+        <button class="btn-danger btn-sm" style="padding:0 var(--s4)" onclick="pfDeleteRun('pfSetupPick')">Delete</button>
+        <span class="pill danger hidden" id="pfDirty" title="You have changes that haven't been saved yet">&#9679; Unsaved changes</span>
       </div>
 
-      <div class="row" style="margin-top:var(--s4)">
-        <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
-        <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
-        <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
-      </div>
-
-      <label for="pf_dirmode">Direction names</label>
-      <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Optionally replace north/south/east/west with placeholder words in the prompt, to test whether a model is doing real spatial reasoning or just pattern-matching on those specific direction words.</div>
-      <select id="pf_dirmode" onchange="pfUpdateDirMode()">
-        <option value="real">Real names (north / south / east / west)</option>
-        <option value="fixed">Custom placeholders (same words every trial)</option>
-        <option value="random">Random placeholders (new words every trial)</option>
-      </select>
-      <div id="pfDirLabelsBox" class="hidden" style="margin-top:var(--s3)">
-        <div class="row">
-          <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
-          <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
-          <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
-          <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
-          <div><label aria-hidden="true">&nbsp;</label><button class="btn-secondary" style="width:100%" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button></div>
+      <div id="pfSetupFields">
+        <div class="row" style="margin-top:var(--s4)">
+          <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
+          <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
+          <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
         </div>
-      </div>
 
-      <label>Models</label>
-      <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">The pool of models to test - pick as many as you like, from any provider you have a key for.</div>
-      <div id="pfModels"></div>
-      <button class="btn-secondary btn-sm" onclick="pfAddModel()">+ Add model</button>
+        <label for="pf_dirmode">Direction names</label>
+        <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Optionally replace north/south/east/west with placeholder words in the prompt, to test whether a model is doing real spatial reasoning or just pattern-matching on those specific direction words.</div>
+        <select id="pf_dirmode" onchange="pfUpdateDirMode()">
+          <option value="real">Real names (north / south / east / west)</option>
+          <option value="fixed">Custom placeholders (same words every trial)</option>
+          <option value="random">Random placeholders (new words every trial)</option>
+        </select>
+        <div id="pfDirLabelsBox" class="hidden" style="margin-top:var(--s3)">
+          <div class="row">
+            <div><label for="pf_dir_north">North</label><input id="pf_dir_north" placeholder="e.g. yellow"></div>
+            <div><label for="pf_dir_south">South</label><input id="pf_dir_south" placeholder="e.g. green"></div>
+            <div><label for="pf_dir_east">East</label><input id="pf_dir_east" placeholder="e.g. blue"></div>
+            <div><label for="pf_dir_west">West</label><input id="pf_dir_west" placeholder="e.g. red"></div>
+            <div><label aria-hidden="true">&nbsp;</label><button class="btn-secondary" style="width:100%" onclick="pfShuffleDirLabels()">&#127922;&nbsp;Shuffle</button></div>
+          </div>
+        </div>
+
+        <label>Models</label>
+        <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">The pool of models to test - pick as many as you like, from any provider you have a key for.</div>
+        <div id="pfModels"></div>
+        <button class="btn-secondary btn-sm" onclick="pfAddModel()">+ Add model</button>
+      </div>
     </div>
 
     <div class="card"><h3>Run</h3>
@@ -1182,6 +1186,17 @@ async function deleteRun(selectId){const name=$(selectId).value;
 let PFCFG={models:[]};
 function pfDefaultModel(){return{name:presetsFor('openai')[0]||'gpt-4o-mini',backend:'openai',max_tokens:4096};}
 
+// ---------- Paper folding: unsaved-changes tracking ----------
+// Same idea as Crafter's DIRTY/markDirty/clearDirty (edDirty pill), scoped to
+// just the Setup fields (not the picker/buttons above them, or the Run/Graphs
+// cards) via event delegation on #pfSetupFields, so picking a different run
+// from the dropdown doesn't itself count as "you made a change".
+let PF_DIRTY=false, PF_LOADED_NAME=null;
+function pfMarkDirty(){PF_DIRTY=true;$('pfDirty').classList.remove('hidden');}
+function pfClearDirty(){PF_DIRTY=false;$('pfDirty').classList.add('hidden');}
+document.getElementById('pfSetupFields').addEventListener('input',pfMarkDirty);
+document.getElementById('pfSetupFields').addEventListener('change',pfMarkDirty);
+
 // ---------- Paper folding: direction naming ----------
 // "real" (default) leaves the prompt exactly as before. "fixed" swaps in one
 // set of placeholder words for every trial in the run. "random" draws a
@@ -1274,7 +1289,7 @@ function pfBuildRunBody(){
     if(new Set(vals.map(v=>v.toLowerCase())).size<4)return{error:'Direction placeholder names must all be different'};
   }
   return{body:{name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models,
-    direction_mode, direction_labels}};
+    direction_mode, direction_labels, old_name:PF_LOADED_NAME}};
 }
 let pfLastState=null;
 async function pfRunGo(){
@@ -1283,6 +1298,8 @@ async function pfRunGo(){
   const r=await api('/api/paperfold/run/start','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
   toast('Paper-folding run started','ok');
+  PF_LOADED_NAME=body.name; pfClearDirty();
+  await pfLoadRuns(); $('pfSetupPick').value=body.name;
 }
 function pfRunPause(){api('/api/paperfold/run/pause','POST');}
 function pfRunResume(){api('/api/paperfold/run/resume','POST');}
@@ -1290,15 +1307,33 @@ function pfRunStop(){api('/api/paperfold/run/stop','POST');toast('Stopping…');
 // Writes the current Setup form to disk - no models built, no API calls - so
 // a model list/config can be reserved and come back exactly as left, and so
 // a run that later crashes partway through still has every configured model
-// on record (not just the ones it got to before the crash).
+// on record (not just the ones it got to before the crash). If the Run name
+// field was edited since this setup was loaded (old_name != the new name),
+// the server renames the run in place rather than leaving the old name
+// behind as an orphan.
 async function pfSaveSetup(){
   const {body,error}=pfBuildRunBody();
   if(error){toast(error,'err');return;}
   const r=await api('/api/paperfold/setup/save','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
   toast('Setup saved (no trials run yet)','ok');
+  PF_LOADED_NAME=body.name; pfClearDirty();
   await pfLoadRuns();
   $('pfSetupPick').value=body.name;
+}
+// Copies a saved run's setup (trials/folds/direction mode/models, no trial
+// data) into a fresh "<name>_copy" run, then loads that copy into Setup so
+// you can immediately rename it and Save - the rename logic above then
+// applies cleanly since the copy is a real saved run of its own.
+async function pfDuplicateSetup(){
+  const name=$('pfSetupPick').value;
+  if(!name){toast('Pick a run first','err');return;}
+  const r=await api('/api/paperfold/setup/duplicate','POST',{run:name});
+  if(!r.ok){toast('Error: '+r.error,'err');return;}
+  toast('Duplicated to '+r.name,'ok');
+  await pfLoadRuns();
+  $('pfSetupPick').value=r.name;
+  pfPickSetupRun(r.name);
 }
 
 // A local stopwatch, not the 700ms poll cadence - PF_TRIAL_STARTED_AT (the
@@ -1410,12 +1445,16 @@ function pfResetSetup(){
   pfUpdateDirMode();
   PFCFG.models=[pfDefaultModel()];
   pfRenderModels();
+  PF_LOADED_NAME=null;
+  pfClearDirty();
 }
 function pfPickSetupRun(name){
   if(!name){pfResetSetup();return;}
   const run=(window._pfRuns||[]).find(r=>r.name==name);
   if(!run){toast('Could not find that run','err');return;}
   pfApplyRunToSetup(run);
+  PF_LOADED_NAME=name;
+  pfClearDirty();
   // Keep the Graphs picker pointed at the same run, so its existing plots
   // are right there while you decide how to change it.
   $('pfRunPick').value=name; pfShowRun();
@@ -1428,7 +1467,7 @@ async function pfDeleteRun(selectId){
   const r=await api('/api/paperfold/run/delete','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   toast('Deleted run '+name,'ok');
-  if($('pfSetupPick').value==name)pfResetSetup();
+  if($('pfSetupPick').value==name||PF_LOADED_NAME==name)pfResetSetup();
   await pfLoadRuns(); pfShowRun();
 }
 
