@@ -112,7 +112,7 @@ class ExperimentRunner:
             return
 
         LOG.info("[%s] loading (resuming at trial %d/%d)...", spec.name, done, total)
-        model = build_model(spec, self.cfg.objective.target)
+        model = build_model(spec, self.cfg.objective.target, control=self.control)
         try:
             model.load()
         except Exception as exc:  # e.g. out-of-memory on a huge model

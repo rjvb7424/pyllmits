@@ -24,6 +24,7 @@ import crafter.constants as C
 
 from models.base import LanguageModel
 from models.conversation import ConversationMemory
+from run_control import RunControl, StopExperiment
 
 LOG = logging.getLogger("crafter_experiment.models.openai")
 DEFAULT_KEY_ENV = "OPENAI_API_KEY"
@@ -61,8 +62,15 @@ class OpenAIModel(LanguageModel):
         action_retries: int = 0,
         reasoning_effort: str | None = None,
         history_turns: int = 0,
+        control: "RunControl | None" = None,
     ):
         super().__init__(name)
+        # Lets a stuck retry backoff (or the initial request_delay) notice
+        # Stop immediately instead of only being checked between trials -
+        # without this, hitting Stop mid-retry could block for minutes
+        # (max_retries x up-to-60s backoff) before the run thread actually
+        # exits, which is what kept "Save" refused with "still running".
+        self._control = control
 
         self._model_id = model or name
         self._max_tokens = int(max_tokens)
@@ -144,6 +152,9 @@ class OpenAIModel(LanguageModel):
         system_prompt: str,
         user_prompt: str,
     ) -> tuple[str, float]:
+        if self._control is not None and self._control.stopped:
+            raise StopExperiment()
+
         # Prepend recent (user, assistant) turns so the model remembers what it
         # just did. With history_turns=0 this is exactly [system, current user].
         base_messages = self._memory.messages(system_prompt, user_prompt)
@@ -151,7 +162,7 @@ class OpenAIModel(LanguageModel):
         # Request throttling is deliberately excluded from measured model
         # latency.
         if self._request_delay > 0:
-            time.sleep(self._request_delay)
+            self._interruptible_sleep(self._request_delay)
 
         attempts = 1 + (
             self._action_retries
@@ -164,6 +175,9 @@ class OpenAIModel(LanguageModel):
         self.last_usage = 0  # accumulate tokens across attempts this turn
 
         for attempt in range(attempts):
+            if self._control is not None and self._control.stopped:
+                raise StopExperiment()
+
             messages = list(base_messages)
 
             if attempt > 0:
@@ -233,6 +247,22 @@ class OpenAIModel(LanguageModel):
         text = self._response_text(last_response)
         self._memory.record(user_prompt, text)
         return text, elapsed_total
+
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Like time.sleep(seconds), but polls for Stop every 0.2s so a long
+        request_delay or retry backoff (up to MAX_BACKOFF, x max_retries)
+        can't hold the run thread hostage after the user hits Stop."""
+        if self._control is None:
+            time.sleep(seconds)
+            return
+        end = time.perf_counter() + seconds
+        while True:
+            if self._control.stopped:
+                raise StopExperiment()
+            remaining = end - time.perf_counter()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.2, remaining))
 
     def _request_params(
         self,
@@ -400,7 +430,7 @@ class OpenAIModel(LanguageModel):
                     self._max_retries,
                 )
 
-                time.sleep(wait)
+                self._interruptible_sleep(wait)
 
             except openai.APIStatusError as exc:
                 # Hugging Face may return HTTP 405 for models such as Phi-4 that

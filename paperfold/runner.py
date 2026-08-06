@@ -143,7 +143,7 @@ class PaperfoldRunner:
             return
 
         LOG.info("[%s] loading (resuming at trial %d/%d)...", spec.name, done, total)
-        model = build_model(spec)
+        model = build_model(spec, control=self.control)
         try:
             model.load()
         except Exception as exc:  # e.g. missing/invalid API key
@@ -169,6 +169,12 @@ class PaperfoldRunner:
                 LOG.info("[%s] trial %d/%d ...", spec.name, trial + 1, total)
                 try:
                     result = self._run_trial(spec, model, trial, labels)
+                except StopExperiment:
+                    # A model call can be stuck in retry backoff when Stop is
+                    # pressed - that raises StopExperiment here too (not just
+                    # at the checkpoint() above), and it must propagate up to
+                    # run()'s handler, not get recorded as a trial failure.
+                    raise
                 except Exception as exc:
                     # Isolate the failure to this one model - e.g. a transient
                     # provider error - rather than aborting every other model

@@ -40,8 +40,13 @@ def _openai_style_kwargs(opts: dict) -> dict:
     )
 
 
-def build_model(spec: ModelSpec, objective_target: str | None = None) -> LanguageModel:
-    """Instantiate the agent described by ``spec``."""
+def build_model(spec: ModelSpec, objective_target: str | None = None, control=None) -> LanguageModel:
+    """Instantiate the agent described by ``spec``.
+
+    ``control`` (a run_control.RunControl), when given, lets the OpenAI-style
+    backends notice Stop while stuck in retry backoff instead of only at the
+    next per-trial/per-turn checkpoint - see OpenAIModel._interruptible_sleep.
+    """
     opts = spec.options
     backend = spec.backend.lower()
 
@@ -60,6 +65,7 @@ def build_model(spec: ModelSpec, objective_target: str | None = None) -> Languag
             name=spec.name,
             api_key_env=opts.get("api_key_env", "OPENAI_API_KEY"),
             base_url=opts.get("base_url"),
+            control=control,
             **_openai_style_kwargs(opts),
         )
 
@@ -68,6 +74,7 @@ def build_model(spec: ModelSpec, objective_target: str | None = None) -> Languag
             name=spec.name,
             api_key_env=opts.get("api_key_env", "HF_TOKEN"),
             base_url=opts.get("base_url", "https://router.huggingface.co/v1"),
+            control=control,
             **_openai_style_kwargs(opts),
         )
 

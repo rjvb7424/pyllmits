@@ -48,6 +48,13 @@ class RunControl:
     def paused(self) -> bool:
         return not self._resume.is_set()
 
+    @property
+    def stopped(self) -> bool:
+        """True once stop() has been called - lets long-running work (e.g. a
+        model call stuck in retry backoff) poll for cancellation without
+        waiting for the next checkpoint()."""
+        return self._stopped
+
     def checkpoint(self):
         """Block while paused; raise StopExperiment if stopped."""
         self._resume.wait()
