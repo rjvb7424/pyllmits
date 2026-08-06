@@ -1,4 +1,4 @@
-"""studio_ui.py - the single-page app served by studio.py (HTML/CSS/JS).
+"""llmits.studio.ui - the single-page app served by server.py (HTML/CSS/JS).
 
 Redesign notes (behaviour preserved; markup + styling + feedback changed):
   * "Ember" design system via CSS tokens (warm accent, tool-like density).
@@ -155,7 +155,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   /* Terminal - pinned to the bottom of every tab, like the header at the
      top. Mirrors the real process's stdout/stderr + logging 1:1 (see
-     studio.py's ConsoleLog / _install_console_capture), not a separate
+     server.py's ConsoleLog / _install_console_capture), not a separate
      "activity log" - so it looks and behaves like an actual terminal. */
   #terminal{flex-shrink:0;z-index:20;display:flex;flex-direction:column;height:240px;
     background:#0c0c0c;border-top:1px solid var(--line)}
@@ -341,7 +341,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
 <!-- WELCOME - the landing page shown before the app shell. Branding, what
      Pyllmits is, the PyPI package, and where to drop API keys (written
-     straight to a local .env - see /api/env/save in studio.py). -->
+     straight to a local .env - see /api/env/save in server.py). -->
 <div id="welcome">
   <div class="welcome-appbar">
     <div class="brand"><img class="mark" src="/api/logo.png" alt=""/><span>Pyllmits</span></div>
@@ -968,7 +968,7 @@ function switchBackend(i,v){CFG.models[i].backend=v; CFG.models[i].name='';
   renderModels();}
 // Reasoning-style models (OpenAI o-series, gpt-5.x/6.x, or anything given a
 // reasoning_effort) reject a custom temperature - mirrors
-// OpenAIModel._is_reasoning_model in models/openai_api.py, so the editor
+// OpenAIModel._is_reasoning_model in llmits/models/openai_api.py, so the editor
 // never offers a field that would just be silently dropped at request time.
 function isReasoningModel(m){
   if(m.reasoning_effort)return true;
@@ -1173,7 +1173,7 @@ async function regenGraphs(){const name=$('runPick').value;
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
 // Download-all: regenerate the graphs so they're current, then have the
 // server copy every plot into one real folder under ~/Downloads (see
-// /api/run/download_plots in studio.py). The Studio server and the browser
+// /api/run/download_plots in server.py). The Studio server and the browser
 // are the same machine for this local tool, so this sidesteps the browser's
 // download machinery entirely - no zip, no per-click file-picker permission,
 // no loose files scattered in the Downloads root.
@@ -1568,7 +1568,7 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
 // Same shortcut as Crafter's downloadAllGraphs(): regenerate so the graphs
 // are current, then have the server copy every PNG into one real folder
-// under ~/Downloads (see _download_paperfold_plots in studio.py) - no zip,
+// under ~/Downloads (see _download_paperfold_plots in server.py) - no zip,
 // no per-click browser file-picker, since Studio and the browser are the
 // same machine for this local tool.
 async function pfDownloadAllGraphs(){

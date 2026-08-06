@@ -1,6 +1,6 @@
 """
-models/huggingface_local.py
-===========================
+llmits.models.huggingface_local
+===============================
 
 Runs a HuggingFace model locally with ``transformers``. Built for an Apple
 Silicon (M-series) laptop: it auto-selects the MPS backend, loads lazily, and
@@ -18,7 +18,7 @@ import gc
 import logging
 import time
 
-from models.base import LanguageModel
+from llmits.models.base import LanguageModel
 
 LOG = logging.getLogger("crafter_experiment.models.hf")
 

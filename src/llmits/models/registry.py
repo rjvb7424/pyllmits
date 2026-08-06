@@ -1,6 +1,6 @@
 """
-models/registry.py
-==================
+llmits.models.registry
+======================
 
 Factory that turns a :class:`config.ModelSpec` into a concrete
 :class:`LanguageModel`.
@@ -15,13 +15,13 @@ Backends, each its own class:
 
 from __future__ import annotations
 
-from config import ModelSpec
-from models.base import LanguageModel
-from models.huggingface_local import HuggingFaceModel
-from models.openai_api import OpenAIModel
-from models.huggingface_api import HuggingFaceAPIModel
-from models.gemini_api import GeminiModel
-from models.mock import MockModel, GOAL_SYMBOL_BY_TARGET
+from llmits.config import ModelSpec
+from llmits.models.base import LanguageModel
+from llmits.models.huggingface_local import HuggingFaceModel
+from llmits.models.openai_api import OpenAIModel
+from llmits.models.huggingface_api import HuggingFaceAPIModel
+from llmits.models.gemini_api import GeminiModel
+from llmits.models.mock import MockModel, GOAL_SYMBOL_BY_TARGET
 
 
 def _openai_style_kwargs(opts: dict) -> dict:

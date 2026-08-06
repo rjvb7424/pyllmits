@@ -1,14 +1,16 @@
 """
-main.py
-=======
+llmits.cli
+==========
 
-One command to run an experiment end to end:
+The command-line entry point (installed as ``llmits``, also runnable as
+``python -m llmits``):
 
-    python main.py                 # run + LIVE view + plots + viewer
-    python main.py my_config.yaml
-    python main.py --no-live       # skip the real-time browser view
-    python main.py --skip-analyze  # just run the trials
-    python main.py --skip-run      # only (re)build plots + viewer from results
+    llmits                          # open the Studio UI (the default)
+    llmits --run                    # run + LIVE view + plots + viewer
+    llmits --run my_config.yaml     # a different experiment
+    llmits --run --no-live          # skip the real-time browser view
+    llmits --run --skip-analyze     # just run the trials
+    llmits --run --skip-run         # only (re)build plots + viewer from results
 
 The live browser view is ON by default and opens a tab automatically. The
 experiment is defined entirely by the YAML config; this file only wires the
@@ -22,10 +24,10 @@ import json
 import logging
 import os
 
-import colab_support
-from config import load_config
-from experiment import ExperimentRunner
-from live_viewer import DEFAULT_PORT
+from llmits import colab_support
+from llmits.config import load_config
+from llmits.experiment import ExperimentRunner
+from llmits.live_viewer import DEFAULT_PORT
 
 # Third-party libraries that spam INFO logs (the "HTTP Request: GET ..." lines,
 # urllib3 connection chatter, etc.). Pinned to WARNING so the console only shows
@@ -65,8 +67,8 @@ def main(argv: list[str] | None = None) -> None:
         # A bare `import main; main.main()` inside a notebook kernel (Colab,
         # Jupyter) sees the kernel's own launcher args in sys.argv (e.g.
         # `-f /path/to/connection-file.json`), not anything the user typed.
-        # Treat that as "no args", same as a bare `python main.py` in a real
-        # shell - a genuine `python main.py --run` still works normally since
+        # Treat that as "no args", same as a bare `llmits` in a real
+        # shell - a genuine `llmits --run` still works normally since
         # that process's sys.argv never has kernel launcher flags in it.
         argv = [] if colab_support.running_under_kernel() else None
     ap = argparse.ArgumentParser(description="Run a Crafter LLM experiment.")
@@ -96,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
     # The Studio UI is the default entry point. Direct CLI runs need --run
     # (or --rebuild-videos, which operates on an existing run).
     if not args.run and not args.rebuild_videos:
-        import studio
+        from llmits import studio
         studio.serve(port=args.studio_port)
         return
 
@@ -116,23 +118,16 @@ def main(argv: list[str] | None = None) -> None:
         runner.run()
 
     if not args.skip_analyze:
-        import analyze_results
+        from llmits.analysis import plots
         results = json.loads(cfg.results_path.read_text())
-        rows = analyze_results.summarise(results)
-        name = analyze_results.get_experiment_name(results, cfg.results_path)
-        slug = cfg.results_path.parent.name
-        cfg.plots_dir.mkdir(parents=True, exist_ok=True)
-        analyze_results.plot_success_rate(rows, cfg.plots_dir / analyze_results.plot_filename("success_rate", slug), name)
-        analyze_results.plot_think_time(rows, cfg.plots_dir / analyze_results.plot_filename("think_time", slug), name)
-        analyze_results.plot_success_matrix(rows, cfg.plots_dir / analyze_results.plot_filename("success_matrix", slug), name)
-        analyze_results.plot_turns_to_solve(results, cfg.plots_dir / analyze_results.plot_filename("turns_to_solve", slug), name)
-        analyze_results.plot_turns_to_fail(results, cfg.plots_dir / analyze_results.plot_filename("turns_to_fail", slug), name)
-        analyze_results.plot_tokens_to_solve(results, cfg.plots_dir / analyze_results.plot_filename("tokens_to_solve", slug), name)
-        analyze_results.plot_tokens_to_fail(results, cfg.plots_dir / analyze_results.plot_filename("tokens_to_fail", slug), name)
-        analyze_results.print_summary(results, rows)
+        rows = plots.summarise(results)
+        name = plots.get_experiment_name(results, cfg.results_path)
+        plots.build_all_plots(results, cfg.plots_dir, cfg.results_path.parent.name,
+                              name, rows=rows)
+        plots.print_summary(results, rows)
 
     if not args.skip_viewer:
-        from viewer import build_viewer
+        from llmits.analysis.viewer import build_viewer
         out = build_viewer(cfg.results_path, cfg.run_dir / "viewer.html")
         logging.getLogger("crafter_experiment").info("Replay viewer: %s", out)
 

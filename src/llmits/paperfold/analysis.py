@@ -1,6 +1,6 @@
 """
-paperfold/analyze_results.py
-=============================
+llmits.paperfold.analysis
+=========================
 
 Reads a paper-folding run's results.json and writes plots visualising how
 well each model solved the puzzle. Ported from the original prototype's

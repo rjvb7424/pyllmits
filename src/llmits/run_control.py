@@ -1,6 +1,6 @@
 """
-run_control.py
-===============
+llmits.run_control
+==================
 
 Thread-safe play/pause/stop primitive shared by every experiment runner
 (Crafter's ExperimentRunner, the paper-folding PaperfoldRunner, ...). Nothing

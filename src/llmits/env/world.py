@@ -1,6 +1,6 @@
 """
-world.py
-========
+llmits.env.world
+================
 
 A controllable Crafter environment.
 
@@ -20,7 +20,7 @@ import numpy as np
 import crafter
 from crafter import objects
 
-from config import WorldCfg
+from llmits.config import WorldCfg
 
 LOG = logging.getLogger("crafter_experiment.world")
 

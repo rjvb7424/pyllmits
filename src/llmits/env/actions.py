@@ -1,6 +1,6 @@
 """
-actions.py
-==========
+llmits.env.actions
+==================
 
 Turns a model's raw text reply into a concrete Crafter action index.
 

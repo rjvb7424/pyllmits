@@ -1,6 +1,6 @@
 """
-models/gemini_api.py
-====================
+llmits.models.gemini_api
+========================
 
 An agent backed by Google's Gemini API (models such as ``gemini-2.5-flash``).
 Uses the current ``google-genai`` SDK. The API key is read from the environment
@@ -15,8 +15,8 @@ from __future__ import annotations
 import os
 import time
 
-from models.base import LanguageModel
-from models.conversation import ConversationMemory
+from llmits.models.base import LanguageModel
+from llmits.models.conversation import ConversationMemory
 
 DEFAULT_KEY_ENV = "GEMINI_API_KEY"
 FALLBACK_KEY_ENV = "GOOGLE_API_KEY"

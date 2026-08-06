@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyllmits"
-version = "0.4.0"
+version = "0.5.0"
 description = "Large Language Model Instinct Testing under Survival - benchmark LLMs in a hand-built Crafter survival world."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,30 +38,17 @@ dependencies = [
 Repository = "https://github.com/rjvb7424/summer-2026-internship"
 
 [project.scripts]
-llmits = "main:main"
+llmits = "llmits.cli:main"
 
+# The llmits package lives under src/; main.py at the repo root is shipped as
+# a top-level module so the published `import main; main.main()` entry point
+# keeps working for existing users.
 [tool.setuptools]
-py-modules = [
-    "actions",
-    "analyze_results",
-    "colab_support",
-    "config",
-    "experiment",
-    "live_viewer",
-    "main",
-    "observation",
-    "prompt",
-    "run_control",
-    "studio",
-    "studio_ui",
-    "success",
-    "videos",
-    "viewer",
-    "world",
-]
+package-dir = { "" = ".", "llmits" = "src/llmits" }
+py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["models*", "assets*", "paperfold*"]
+where = ["src"]
 
 [tool.setuptools.package-data]
-assets = ["*.png", "*.mp4"]
+"llmits.assets" = ["*.png", "*.mp4"]

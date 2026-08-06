@@ -1,6 +1,6 @@
 """
-analyze_results.py
-==================
+llmits.analysis.plots
+=====================
 
 Reads a run's results.json and writes plots visualising how well each model
 achieved the objective. The experiment name appears in every title (underscores
@@ -340,6 +340,30 @@ def _finish(fig, ax, out):
     plt.close(fig)
 
 
+def build_all_plots(results, plots_dir: Path, slug: str, experiment_name: str,
+                    rows: list[dict[str, Any]] | None = None) -> None:
+    """Write every plot in ``PLOT_KINDS`` for one run into ``plots_dir``.
+
+    The single authority on what "all plots" means - the CLI, the Studio's
+    regenerate endpoint, and this module's own ``main()`` all go through here.
+    """
+    if rows is None:
+        rows = summarise(results)
+    plotters = {
+        "success_rate": (plot_success_rate, rows),
+        "think_time": (plot_think_time, rows),
+        "success_matrix": (plot_success_matrix, rows),
+        "turns_to_solve": (plot_turns_to_solve, results),
+        "turns_to_fail": (plot_turns_to_fail, results),
+        "tokens_to_solve": (plot_tokens_to_solve, results),
+        "tokens_to_fail": (plot_tokens_to_fail, results),
+    }
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    for kind in PLOT_KINDS:
+        plot, data = plotters[kind]
+        plot(data, plots_dir / plot_filename(kind, slug), experiment_name)
+
+
 def print_summary(results, rows):
     objective = results.get("objective", {})
     if isinstance(objective, dict):
@@ -361,7 +385,7 @@ def print_summary(results, rows):
 def resolve_results_path(args):
     if args.results:
         return Path(args.results)
-    from config import load_config
+    from llmits.config import load_config
     return load_config(args.config).results_path
 
 
@@ -378,15 +402,7 @@ def main():
     slug = results_path.parent.name
 
     plots_dir = results_path.parent / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-
-    plot_success_rate(rows, plots_dir / plot_filename("success_rate", slug), experiment_name)
-    plot_think_time(rows, plots_dir / plot_filename("think_time", slug), experiment_name)
-    plot_success_matrix(rows, plots_dir / plot_filename("success_matrix", slug), experiment_name)
-    plot_turns_to_solve(results, plots_dir / plot_filename("turns_to_solve", slug), experiment_name)
-    plot_turns_to_fail(results, plots_dir / plot_filename("turns_to_fail", slug), experiment_name)
-    plot_tokens_to_solve(results, plots_dir / plot_filename("tokens_to_solve", slug), experiment_name)
-    plot_tokens_to_fail(results, plots_dir / plot_filename("tokens_to_fail", slug), experiment_name)
+    build_all_plots(results, plots_dir, slug, experiment_name, rows=rows)
 
     print_summary(results, rows)
     print(f"Plots written to {plots_dir}/")

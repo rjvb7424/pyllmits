@@ -6,8 +6,17 @@ Crafter's **built-in achievement system**. Everything — world layout, goal,
 models, turn/trial counts — is driven by one YAML file.
 
 ```
-python main.py                 # run + plots + viewer, using config.yaml
-python main.py my_config.yaml  # a different experiment
+llmits                         # open the Studio UI in your browser (the default)
+llmits --run                   # run + plots + viewer, using config.yaml
+llmits --run my_config.yaml    # a different experiment
+```
+
+`python -m llmits` and `python main.py` work identically, and from the
+installed pip package so does the classic notebook entry point:
+
+```python
+import main
+main.main()
 ```
 
 Outputs land in `runs/<experiment_name>/`:
@@ -93,8 +102,8 @@ objective:
   amount: 3
 ```
 
-The success test lives in `success.py` (`ObjectiveChecker`) — that's the single
-module to edit if you ever want a bespoke win condition.
+The success test lives in `src/llmits/env/success.py` (`ObjectiveChecker`) —
+that's the single module to edit if you ever want a bespoke win condition.
 
 ### Turns, trials, seeds
 
@@ -146,7 +155,7 @@ system install.
 ## Watching it run live
 
 ```
-python main.py --live            # runs + serves a real-time view
+llmits --run                     # runs + serves a real-time view (on by default)
 ```
 
 This starts a small local web server (default http://127.0.0.1:8000) and prints
@@ -162,7 +171,7 @@ fact review, use the static replay below.
 ## Seeing what the model did
 
 ```
-python viewer.py           # (re)build viewer.html from the latest run
+python -m llmits.analysis.viewer   # (re)build viewer.html from the latest run
 ```
 
 Open `runs/<name>/viewer.html`. Pick a model and trial, then scrub through the
@@ -172,27 +181,40 @@ the model's raw response, the action taken, the turn number and the think time.
 Rebuild plots without rerunning trials:
 
 ```
-python main.py --skip-run
+llmits --run --skip-run
 ```
 
 ---
 
-## File map
+## Project layout
 
-| File | Role |
+All source code lives in the `llmits` package under `src/`:
+
+| Path (under `src/llmits/`) | Role |
 |---|---|
-| `config.yaml` / `config.py` | the experiment definition + typed loader/validator |
-| `world.py` | custom Crafter env + world builder |
-| `observation.py` | world → text map, legend, PNG frames |
-| `prompt.py` | fills the prompt template |
-| `actions.py` | parses an action out of the model's text |
-| `success.py` | **the swappable objective checker** |
-| `models/` | model backends (`huggingface_local`, `mock`) + registry |
+| `cli.py` | the `llmits` command: Studio by default, `--run` for headless runs |
+| `config.py` | the experiment definition — typed loader/validator for `config.yaml` |
 | `experiment.py` | the runner: trials, logging, crash-safe saving, resume |
-| `analyze_results.py` | results.json → plots |
-| `viewer.py` | results.json → viewer.html |
-| `videos.py` | in-memory frames → one mp4 per model |
-| `main.py` | run + analyze + viewer in one command |
+| `run_control.py` | thread-safe play/pause/stop switch shared by every runner |
+| `live_viewer.py` | real-time browser view of a run while it happens |
+| `colab_support.py` | best-effort Google Colab support for the local web servers |
+| `env/world.py` | custom Crafter env + world builder |
+| `env/observation.py` | world → text map, legend, PNG frames |
+| `env/prompt.py` | fills the prompt template |
+| `env/actions.py` | parses an action out of the model's text |
+| `env/success.py` | **the swappable objective checker** |
+| `models/` | model backends (`openai`, `gemini`, `huggingface`, `mock`) + registry |
+| `analysis/plots.py` | results.json → plots |
+| `analysis/viewer.py` | results.json → viewer.html |
+| `analysis/videos.py` | in-memory frames → one mp4 per model |
+| `studio/` | the browser Studio: `server.py` (stdlib HTTP + JSON API) + `ui.py` (single-page app) |
+| `paperfold/` | the independent paper-folding spatial-reasoning benchmark |
+| `assets/` | static files bundled with the package (logo, demo clip) |
+
+At the repository root, `main.py` is a thin compatibility launcher (it ships
+in the pip package too, so `import main; main.main()` keeps working), and
+experiment configs live in `configs/`, run outputs in `runs/` and
+`paperfold_runs/` — next to `config.yaml`.
 
 ---
 
@@ -200,6 +222,5 @@ python main.py --skip-run
 
 - Local HuggingFace inference needs network access on first load (to download
   weights) and, for gated models, a logged-in `huggingface-cli`.
-- All model-facing code (`world`, `observation`, `prompt`, `actions`,
-  `success`, `models/`) is free of `print`/`input`; console output goes through
-  `logging` in the runner only.
+- All model-facing code (`llmits.env`, `llmits.models`) is free of
+  `print`/`input`; console output goes through `logging` in the runner only.

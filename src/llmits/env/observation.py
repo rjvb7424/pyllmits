@@ -1,6 +1,6 @@
 """
-observation.py
-==============
+llmits.env.observation
+======================
 
 Turns the live Crafter world into the two things the experiment consumes:
 

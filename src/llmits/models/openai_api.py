@@ -1,6 +1,6 @@
 """
-models/openai_api.py
-====================
+llmits.models.openai_api
+========================
 
 OpenAI-compatible backend used for both OpenAI models and Hugging Face
 Inference Providers.
@@ -22,9 +22,9 @@ import time
 
 import crafter.constants as C
 
-from models.base import LanguageModel
-from models.conversation import ConversationMemory
-from run_control import RunControl, StopExperiment
+from llmits.models.base import LanguageModel
+from llmits.models.conversation import ConversationMemory
+from llmits.run_control import RunControl, StopExperiment
 
 LOG = logging.getLogger("crafter_experiment.models.openai")
 DEFAULT_KEY_ENV = "OPENAI_API_KEY"

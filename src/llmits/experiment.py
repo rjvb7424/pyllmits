@@ -1,6 +1,6 @@
 """
-experiment.py
-=============
+llmits.experiment
+=================
 
 Drives the whole evaluation:
 
@@ -33,16 +33,16 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-import observation as obs
-import videos
-from actions import ActionParser
-from config import Config
-from live_viewer import DEFAULT_PORT, LiveViewer
-from models import build_model
-from prompt import PromptBuilder
-from run_control import RunControl, StopExperiment
-from success import ObjectiveChecker
-from world import CustomCrafterEnv
+from llmits.env import observation as obs
+from llmits.analysis import videos
+from llmits.env.actions import ActionParser
+from llmits.config import Config
+from llmits.live_viewer import DEFAULT_PORT, LiveViewer
+from llmits.models import build_model
+from llmits.env.prompt import PromptBuilder
+from llmits.run_control import RunControl, StopExperiment
+from llmits.env.success import ObjectiveChecker
+from llmits.env.world import CustomCrafterEnv
 
 LOG = logging.getLogger("crafter_experiment.run")
 

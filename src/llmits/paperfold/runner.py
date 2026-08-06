@@ -1,6 +1,6 @@
 """
-paperfold/runner.py
-====================
+llmits.paperfold.runner
+=======================
 
 Drives a paper-folding batch:
 
@@ -36,10 +36,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from config import ModelSpec
-from models import build_model
-from paperfold.cognitive_test import CognitiveTest, random_direction_labels
-from run_control import RunControl, StopExperiment
+from llmits.config import ModelSpec
+from llmits.models import build_model
+from llmits.paperfold.cognitive_test import CognitiveTest, random_direction_labels
+from llmits.run_control import RunControl, StopExperiment
 
 LOG = logging.getLogger("crafter_experiment.paperfold.run")
 

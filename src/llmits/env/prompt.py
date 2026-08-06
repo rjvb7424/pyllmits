@@ -1,6 +1,6 @@
 """
-prompt.py
-=========
+llmits.env.prompt
+=================
 
 Builds the system/user prompt shown to the model each turn by filling the
 templates in ``config.yaml`` with the current world observation.
@@ -14,9 +14,9 @@ AI-facing: no prints, no inputs.
 
 from __future__ import annotations
 
-from config import PromptCfg
-import observation as obs
-from actions import ACTIONS
+from llmits.config import PromptCfg
+from llmits.env import observation as obs
+from llmits.env.actions import ACTIONS
 
 
 class PromptBuilder:

@@ -1,6 +1,6 @@
 """
-models/conversation.py
-======================
+llmits.models.conversation
+==========================
 
 Short-term conversation memory so a model remembers its own recent turns.
 

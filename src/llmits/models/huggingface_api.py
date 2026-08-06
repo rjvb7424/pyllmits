@@ -1,6 +1,6 @@
 """
-models/huggingface_api.py
-=========================
+llmits.models.huggingface_api
+=============================
 
 Runs Hugging Face models in the cloud via the HF Inference Providers router,
 which exposes an OpenAI-compatible chat-completions endpoint. This is its own
@@ -16,7 +16,7 @@ Key:
 
 from __future__ import annotations
 
-from models.openai_api import OpenAIModel
+from llmits.models.openai_api import OpenAIModel
 
 HF_ROUTER_URL = "https://router.huggingface.co/v1"
 HF_KEY_ENV = "HF_TOKEN"

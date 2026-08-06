@@ -1,6 +1,6 @@
 """
-videos.py
-=========
+llmits.analysis.videos
+======================
 
 Writes ONE MP4 per model, streaming frames to disk as they are produced so the
 run never holds a whole video in memory - which is what makes high-resolution

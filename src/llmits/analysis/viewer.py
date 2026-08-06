@@ -1,14 +1,14 @@
 """
-viewer.py
-=========
+llmits.analysis.viewer
+======================
 
 Builds a single self-contained ``viewer.html`` inside the run folder so you can
 replay exactly what each model did: the game state, the prompt it saw, its raw
 response, the action it chose, the turn number, and how long it thought.
 
-    python viewer.py                 # uses config.yaml to find the run
-    python viewer.py my_config.yaml
-    python viewer.py --results runs/gather_wood_10x10/results.json
+    python -m llmits.analysis.viewer                 # uses config.yaml to find the run
+    python -m llmits.analysis.viewer my_config.yaml
+    python -m llmits.analysis.viewer --results runs/gather_wood_10x10/results.json
 
 Open the generated ``runs/<name>/viewer.html`` in a browser. It references the
 PNG frames alongside it (and falls back to the ASCII map if frames were off).
@@ -360,7 +360,7 @@ def resolve_paths(args) -> tuple[Path, Path]:
     if args.results:
         results_path = Path(args.results)
         return results_path, results_path.parent / "viewer.html"
-    from config import load_config
+    from llmits.config import load_config
     cfg = load_config(args.config)
     return cfg.results_path, cfg.run_dir / "viewer.html"
 

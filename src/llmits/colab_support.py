@@ -1,8 +1,8 @@
-"""colab_support.py
-====================
+"""llmits.colab_support
+=======================
 
 Best-effort Google Colab support for the two local web servers this project
-runs (the Studio UI in studio.py, the live view in live_viewer.py).
+runs (the Studio UI in llmits.studio, the live view in llmits.live_viewer).
 
 Both servers bind to 127.0.0.1. On Colab that's not reachable from your
 actual browser (the kernel runs on a remote VM) - Colab proxies a kernel port

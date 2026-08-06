@@ -1,6 +1,6 @@
 """
-config.py
-=========
+llmits.config
+=============
 
 Loads ``config.yaml`` into typed, defaulted dataclasses and validates it against
 the *installed* Crafter package (so the set of legal achievements/actions always

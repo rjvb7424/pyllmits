@@ -1,6 +1,6 @@
 """
-models/base.py
-==============
+llmits.models.base
+==================
 
 The interface every agent implements. The experiment runner only ever calls:
 

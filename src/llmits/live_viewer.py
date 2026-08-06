@@ -1,6 +1,6 @@
 """
-live_viewer.py
-==============
+llmits.live_viewer
+==================
 
 A real-time view of a run *while it is happening*. The runner starts a small
 background web server; open the printed URL in a browser and the page polls for
@@ -8,7 +8,7 @@ the latest turn and refreshes itself, so you can watch each decision land: the
 game state, the prompt, the model's raw response, the action, the think time,
 and a running success tally.
 
-This is separate from ``viewer.py`` (which builds a static replay you scrub
+This is separate from ``llmits.analysis.viewer`` (which builds a static replay you scrub
 through *after* a run). Use this one to confirm an experiment is working live.
 
     live = LiveViewer(run_dir, "my_exp", "collect wood")
@@ -30,7 +30,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import colab_support
+from llmits import colab_support
 
 LOG = logging.getLogger("crafter_experiment.live")
 

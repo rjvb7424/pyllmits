@@ -1,9 +1,9 @@
 """
-studio.py
-=========
+llmits.studio.server
+====================
 
 A local browser "Studio" for the Crafter experiment harness. Instead of running
-an experiment immediately, `python studio.py` (or `python main.py --studio`)
+an experiment immediately, `llmits` (the default entry point, no flags needed)
 opens a UI where you can:
 
   * browse / load / create config files (in configs/)
@@ -36,8 +36,8 @@ from urllib.parse import urlparse, parse_qs
 import ruamel.yaml
 from dotenv import set_key, unset_key
 
-import colab_support
-from assets import ASSETS_DIR
+from llmits import colab_support
+from llmits.assets import ASSETS_DIR
 
 LOG = logging.getLogger("crafter_experiment.studio")
 
@@ -71,7 +71,7 @@ API_KEY_FIELDS = [
 #  the Studio itself and from experiment runs) into the Run tab's terminal
 #  panel. Two independent taps feed the same ring buffer: a logging.Handler
 #  on the root logger (import-order-independent - basicConfig may run before
-#  or after this module is imported, e.g. via main.py --studio) and a stdout
+#  or after this module is imported, e.g. via the llmits CLI) and a stdout
 #  tee (for the handful of plain print() calls, e.g. this file's banner).
 # =============================================================================
 class ConsoleLog:
@@ -231,8 +231,8 @@ class Studio:
     def start_run(self, config_path: str) -> dict:
         if self.is_running():
             return {"ok": False, "error": "A run is already in progress."}
-        from config import load_config
-        from experiment import ExperimentRunner, RunControl
+        from llmits.config import load_config
+        from llmits.experiment import ExperimentRunner, RunControl
 
         cfg = load_config(config_path)
         self.control = RunControl()
@@ -382,7 +382,7 @@ class PaperfoldRun:
         else:
             direction_labels = None
 
-        from config import ModelSpec
+        from llmits.config import ModelSpec
         try:
             specs = [ModelSpec.from_dict(dict(m)) for m in models]
         except Exception as exc:
@@ -407,7 +407,7 @@ class PaperfoldRun:
         if target_error:
             return {"ok": False, "error": target_error}
 
-        from run_control import RunControl
+        from llmits.run_control import RunControl
 
         self.control = RunControl()
         self.run_name = name
@@ -421,7 +421,7 @@ class PaperfoldRun:
         # surfaces through the polled status.
         def _worker():
             try:
-                from paperfold.runner import PaperfoldRunner
+                from llmits.paperfold.runner import PaperfoldRunner
                 runner = PaperfoldRunner(
                     name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
                     direction_mode=direction_mode, direction_labels=direction_labels,
@@ -462,7 +462,7 @@ class PaperfoldRun:
             return {"ok": False, "error": target_error}
 
         try:
-            from paperfold.runner import PaperfoldRunner
+            from llmits.paperfold.runner import PaperfoldRunner
             runner = PaperfoldRunner(
                 name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
                 direction_mode=direction_mode, direction_labels=direction_labels,
@@ -505,7 +505,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         # Nothing here is ever worth reusing from cache: the page is rebuilt
-        # from studio_ui.py on every server restart, and every API response
+        # from ui.py on every server restart, and every API response
         # reflects files that change under the browser's feet. Without this,
         # a heuristically cached /api/... GET can hand back a run list from
         # before an edit and make a save that did land look like it didn't.
@@ -692,22 +692,14 @@ class Handler(BaseHTTPRequestHandler):
         experiment only ever shows its own models, never another experiment's.
         """
         import json
-        import analyze_results as ar
+        from llmits.analysis import plots as ar
         rp = RUNS_DIR / run_name / "results.json"
         if not rp.exists():
             return {"ok": False, "error": "no results.json for this run"}
         results = json.loads(rp.read_text())
-        rows = ar.summarise(results)
         name = ar.get_experiment_name(results, rp)
         plots = RUNS_DIR / run_name / "plots"
-        plots.mkdir(parents=True, exist_ok=True)
-        ar.plot_success_rate(rows, plots / ar.plot_filename("success_rate", run_name), name)
-        ar.plot_think_time(rows, plots / ar.plot_filename("think_time", run_name), name)
-        ar.plot_success_matrix(rows, plots / ar.plot_filename("success_matrix", run_name), name)
-        ar.plot_turns_to_solve(results, plots / ar.plot_filename("turns_to_solve", run_name), name)
-        ar.plot_turns_to_fail(results, plots / ar.plot_filename("turns_to_fail", run_name), name)
-        ar.plot_tokens_to_solve(results, plots / ar.plot_filename("tokens_to_solve", run_name), name)
-        ar.plot_tokens_to_fail(results, plots / ar.plot_filename("tokens_to_fail", run_name), name)
+        ar.build_all_plots(results, plots, run_name, name)
         # No longer generated, or superseded by the name-scoped filenames above
         # (e.g. a bare "success_rate.png" from before plots were named after
         # their experiment) - remove any stale copies so they don't linger.
@@ -1026,7 +1018,7 @@ class Handler(BaseHTTPRequestHandler):
     def _regen_paperfold_graphs(self, run_name):
         """Rebuild all plots for a paper-folding run from its results.json (no
         model calls). Mirrors _regen_graphs()'s shape for the Crafter side."""
-        import paperfold.analyze_results as ar
+        from llmits.paperfold import analysis as ar
         run_dir = self._paperfold_run_dir(run_name)
         rp = run_dir / "results.json" if run_dir else None
         if not rp or not rp.exists():
@@ -1125,10 +1117,10 @@ def serve(port: int = 8010, open_browser: bool = True, colab: bool | None = None
         print("\nStudio stopped.")
 
 
-# The single-page app (HTML/CSS/JS) is defined in studio_ui.py to keep this file
+# The single-page app (HTML/CSS/JS) is defined in ui.py to keep this file
 # focused on the server. It's imported lazily so a syntax error there can't stop
 # the server from importing.
-from studio_ui import INDEX_HTML  # noqa: E402
+from llmits.studio.ui import INDEX_HTML  # noqa: E402
 
 
 if __name__ == "__main__":

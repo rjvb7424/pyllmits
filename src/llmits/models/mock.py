@@ -1,6 +1,6 @@
 """
-models/mock.py
-==============
+llmits.models.mock
+==================
 
 Zero-download agents, useful for two things:
 
@@ -25,8 +25,8 @@ import time
 
 import numpy as np
 
-from models.base import LanguageModel
-from observation import MATERIAL_SYMBOLS, OBJECT_SYMBOLS
+from llmits.models.base import LanguageModel
+from llmits.env.observation import MATERIAL_SYMBOLS, OBJECT_SYMBOLS
 
 # Objective target -> the map symbol the heuristic should walk toward.
 GOAL_SYMBOL_BY_TARGET: dict[str, str] = {
@@ -73,7 +73,7 @@ class MockModel(LanguageModel):
 
     # -- policies -------------------------------------------------------------
     def _random_action(self) -> str:
-        from actions import ACTIONS
+        from llmits.env.actions import ACTIONS
         return ACTIONS[self._rng.randint(0, len(ACTIONS))]
 
     def _heuristic_action(self, user_prompt: str) -> str:

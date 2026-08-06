@@ -1,6 +1,6 @@
 """
-success.py
-==========
+llmits.env.success
+==================
 
 The single, swappable definition of "did the agent succeed?".
 
@@ -14,7 +14,7 @@ Two objective kinds are supported:
 
 from __future__ import annotations
 
-from config import ObjectiveCfg
+from llmits.config import ObjectiveCfg
 
 
 class ObjectiveChecker:
