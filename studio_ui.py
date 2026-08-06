@@ -717,6 +717,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="term-bar">
     <div class="term-title">Terminal</div>
     <div class="flex" style="gap:4px">
+      <button class="btn-ghost btn-sm" id="termClear" onclick="clearTerminal()"
+        title="Clear the lines shown here - output from this point on still appears">Clear</button>
       <button class="btn-ghost btn-sm" id="termToggle" onclick="toggleTerminal()" aria-label="Expand terminal">&#9650;</button>
     </div>
   </div>
@@ -1664,6 +1666,12 @@ let TERM_SEQ=0;
 function toggleTerminal(){const t=$('terminal'),collapsed=t.classList.toggle('collapsed');
   $('termToggle').innerHTML=collapsed?'&#9650;':'&#9660;';
   $('termToggle').setAttribute('aria-label',collapsed?'Expand terminal':'Collapse terminal');}
+// Empties the panel without touching the server's buffer or TERM_SEQ: polling
+// only ever asks for lines after the last one it saw, so nothing cleared here
+// comes back on the next tick, and output from this point on still arrives.
+function clearTerminal(){
+  $('termOut').innerHTML='<div class="empty">Cleared &ndash; new output will appear here&hellip;</div>';
+}
 function termAppend(lines){
   const out=$('termOut'); const empty=out.querySelector('.empty'); if(empty)empty.remove();
   const atBottom=out.scrollHeight-out.scrollTop-out.clientHeight<24;
