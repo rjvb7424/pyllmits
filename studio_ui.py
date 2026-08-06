@@ -273,6 +273,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.25;color:var(--text)}
 
   .model{background:var(--raised);border:1px solid var(--line);border-radius:var(--radius-lg);padding:var(--s4);margin-bottom:var(--s3)}
+  .model.drag-over{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+  .model.dragging{opacity:.4}
+  .model-drag-handle{cursor:grab;user-select:none;color:var(--muted);font-size:16px;line-height:1;padding:0 2px;touch-action:none}
+  .model-drag-handle:active{cursor:grabbing}
 
   /* Run tab live view - always rendered (with placeholder values) rather than
      only appearing once a run starts, so the tab shows the real layout, not
@@ -1253,9 +1257,15 @@ function pfRenderModels(){$('pfModels').innerHTML=(PFCFG.models||[]).map((m,i)=>
     ?`<div><label>temperature</label><div class="muted" style="min-height:40px;display:flex;align-items:center;font-size:13px">Not supported by this model</div></div>`
     :`<div><label>temperature</label><input value="${m.temperature??''}" oninput="pfSetOpt(${i},'temperature',this.value)"></div>`;
   return `
-  <div class="model">
+  <div class="model" data-index="${i}"
+       ondragover="pfDragOver(event,${i})" ondragleave="pfDragLeave(event)" ondrop="pfDrop(event,${i})">
     <div class="between" style="margin-bottom:var(--s2)">
-      <div class="flex" style="gap:var(--s2)">${readyIcon}<b>${m.name||'model '+(i+1)}</b></div>
+      <div class="flex" style="gap:var(--s2)">
+        <span class="model-drag-handle" draggable="true" title="Drag to reorder - models run top to bottom"
+              ondragstart="pfDragStart(event,${i})" ondragend="pfDragEnd(event)">&#9776;</span>
+        <span class="muted" style="font:12px var(--mono)">#${i+1}</span>
+        ${readyIcon}<b>${m.name||'model '+(i+1)}</b>
+      </div>
       <button class="btn-danger btn-sm" onclick="pfDelModel(${i})">Remove</button></div>
     <div class="row">
       <div><label>Backend</label><select onchange="pfSwitchBackend(${i},this.value)">
@@ -1270,8 +1280,46 @@ function pfRenderModels(){$('pfModels').innerHTML=(PFCFG.models||[]).map((m,i)=>
     </div>
   </div>`;
 }).join('');}
-function pfAddModel(){PFCFG.models.push(pfDefaultModel());pfRenderModels();}
-function pfDelModel(i){PFCFG.models.splice(i,1);pfRenderModels();}
+function pfAddModel(){PFCFG.models.push(pfDefaultModel());pfRenderModels();pfMarkDirty();}
+function pfDelModel(i){PFCFG.models.splice(i,1);pfRenderModels();pfMarkDirty();}
+
+// ---------- Paper folding: reorder models by dragging ----------
+// Models run top to bottom in this list order (PaperfoldRunner just iterates
+// model_specs as given), so dragging a card up or down directly controls
+// which model Start reaches first/last - no separate "run order" concept to
+// keep in sync.
+let PF_DRAG_INDEX=null;
+function pfDragStart(e,i){
+  PF_DRAG_INDEX=i;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',String(i));
+  const card=e.target.closest('.model');
+  if(card){card.classList.add('dragging'); e.dataTransfer.setDragImage(card,20,20);}
+}
+function pfDragEnd(e){
+  const card=e.target.closest('.model');
+  if(card)card.classList.remove('dragging');
+  document.querySelectorAll('#pfModels .model.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  PF_DRAG_INDEX=null;
+}
+function pfDragOver(e,i){
+  if(PF_DRAG_INDEX===null||PF_DRAG_INDEX===i)return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.classList.add('drag-over');
+}
+function pfDragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function pfDrop(e,i){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(PF_DRAG_INDEX===null||PF_DRAG_INDEX===i)return;
+  const arr=PFCFG.models;
+  const [moved]=arr.splice(PF_DRAG_INDEX,1);
+  arr.splice(i,0,moved);
+  PF_DRAG_INDEX=null;
+  pfRenderModels();
+  pfMarkDirty();
+}
 
 // ---------- Paper folding: run controls ----------
 // Shared by Start and Save setup, so both send the exact same shape and
