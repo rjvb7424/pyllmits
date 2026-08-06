@@ -303,11 +303,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
   #plots>.empty{align-self:stretch}
   button:disabled{opacity:.45;cursor:not-allowed}
 
-  #toasts{position:fixed;right:var(--s6);bottom:var(--s6);z-index:50;display:flex;flex-direction:column;gap:var(--s2)}
+  /* Clears the collapsed terminal bar along the bottom edge - error toasts
+     now wait to be dismissed, so they must not sit half-hidden behind it. */
+  #toasts{position:fixed;right:var(--s6);bottom:calc(42px + var(--s4));z-index:50;
+    display:flex;flex-direction:column;gap:var(--s2)}
   .toast{background:var(--raised);border:1px solid var(--line2);border-left:3px solid var(--accent);
-    border-radius:var(--radius);padding:var(--s3) var(--s4);font-size:13.5px;box-shadow:var(--shadow);max-width:340px;animation:slidein .18s ease}
-  .toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--danger)}
+    border-radius:var(--radius);padding:var(--s3) var(--s4);font-size:13.5px;box-shadow:var(--shadow);
+    max-width:340px;animation:slidein .18s ease;cursor:pointer}
+  .toast.ok{border-left-color:var(--ok)}
+  .toast.err{border-left-color:var(--danger);position:relative;padding-right:var(--s6);white-space:pre-line}
+  .toast-x{position:absolute;top:2px;right:8px;font-size:16px;line-height:1;color:var(--muted)}
   @keyframes slidein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* Paper folding: what a save will do, and what each model already has */
+  #pfNameHint{margin-top:calc(-1 * var(--s2))}
+  .pf-hint-warn{color:var(--danger)}
+  .model .trials-pill{font:11px var(--mono);color:var(--muted);border:1px solid var(--line2);
+    border-radius:999px;padding:1px 7px}
 
   @media (max-width:768px){
     header{padding:var(--s3) var(--s4)} main{padding:var(--s4)}
@@ -595,7 +607,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <select id="pfSetupPick" onchange="pfPickSetupRun(this.value)" style="flex:1;text-overflow:ellipsis">
           <option value="">-- start a new run --</option>
         </select>
-        <button class="btn-secondary btn-sm" style="padding:0 var(--s4)" onclick="pfDuplicateSetup()" title="Copy this run's setup (trials, folds, direction mode, model list) into a new run - no trial data carries over">Duplicate</button>
+        <button class="btn-secondary btn-sm" style="padding:0 var(--s4)" onclick="pfDuplicateSetup()" title="Copy the setup below (trials, folds, direction mode, model list) into a new run name - no trial data carries over, and nothing is written until you Save setup or Start">Duplicate</button>
         <button class="btn-secondary btn-sm" style="padding:0 var(--s4)" onclick="pfSaveSetup()" title="Save this setup to disk without running any trials - handy for reserving a name and model list you'll come back to">Save setup</button>
         <button class="btn-danger btn-sm" style="padding:0 var(--s4)" onclick="pfDeleteRun('pfSetupPick')">Delete</button>
         <span class="pill danger hidden" id="pfDirty" title="You have changes that haven't been saved yet">&#9679; Unsaved changes</span>
@@ -603,10 +615,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
       <div id="pfSetupFields">
         <div class="row" style="margin-top:var(--s4)">
-          <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run"></div>
+          <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run" oninput="pfUpdateNameHint()"></div>
           <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
           <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
         </div>
+        <div id="pfNameHint" class="hidden"></div>
 
         <label for="pf_dirmode">Direction names</label>
         <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Optionally replace north/south/east/west with placeholder words in the prompt, to test whether a model is doing real spatial reasoning or just pattern-matching on those specific direction words.</div>
@@ -718,8 +731,21 @@ let META=null, CFG=null, GRID=[], SEL='water', painting=false;
 const $=id=>document.getElementById(id);
 const api=(u,m,b)=>fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},
   body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+// Errors explain why something didn't happen and are often several lines long
+// (name clashes, "stop the run first", config-mismatch refusals) - they stay
+// until dismissed rather than sliding away in 3.2s, which is how a refused
+// save reads as "it just silently didn't save". Successes still auto-dismiss.
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');
-  t.textContent=msg;$('toasts').appendChild(t);setTimeout(()=>t.remove(),3200);}
+  t.textContent=msg;
+  if(kind=='err'){const x=document.createElement('span');x.className='toast-x';x.textContent='×';
+    x.title='Dismiss';t.appendChild(x);t.title='Click to dismiss';
+    // Since these wait to be dismissed, keep only the most recent few rather
+    // than letting a burst of failures climb off the top of the screen.
+    const open=$('toasts').querySelectorAll('.toast.err');
+    for(let i=0;i<=open.length-3;i++)open[i].remove();}
+  t.onclick=()=>t.remove();
+  $('toasts').appendChild(t);
+  if(kind!='err')setTimeout(()=>t.remove(),3200);}
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
   ['configs','editor','run','graphs','videos','paperfold','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
   if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();
@@ -1199,11 +1225,31 @@ function pfDefaultModel(){return{name:presetsFor('openai')[0]||'gpt-4o-mini',bac
 // just the Setup fields (not the picker/buttons above them, or the Run/Graphs
 // cards) via event delegation on #pfSetupFields, so picking a different run
 // from the dropdown doesn't itself count as "you made a change".
-let PF_DIRTY=false, PF_LOADED_NAME=null;
+// PF_LOADED_NAME is the run this form was loaded from - null means "saving
+// creates a new run". PF_TRIALS is {model name: trials already recorded} for
+// that run, so the model cards can show what's on disk and Remove can warn
+// before a save throws those trials away.
+let PF_DIRTY=false, PF_LOADED_NAME=null, PF_TRIALS={};
 function pfMarkDirty(){PF_DIRTY=true;$('pfDirty').classList.remove('hidden');}
 function pfClearDirty(){PF_DIRTY=false;$('pfDirty').classList.add('hidden');}
 document.getElementById('pfSetupFields').addEventListener('input',pfMarkDirty);
 document.getElementById('pfSetupFields').addEventListener('change',pfMarkDirty);
+
+// Says up front what pressing Save setup / Start will do to disk - creating a
+// run, renaming one, or continuing one - so a name clash is visible while
+// you're typing instead of only as a refusal after you press Save.
+function pfUpdateNameHint(){
+  const el=$('pfNameHint'); if(!el)return;
+  const name=($('pf_name').value||'').trim();
+  const exists=(window._pfRuns||[]).some(r=>r.name==name);
+  let msg='', cls='sub';
+  if(!name){msg='';}
+  else if(PF_LOADED_NAME==name){msg=`Saving updates the existing run '${name}'.`;}
+  else if(PF_LOADED_NAME&&!exists){msg=`Saving renames '${PF_LOADED_NAME}' to '${name}' (its results move with it).`;}
+  else if(exists){msg=`A run named '${name}' already exists - saving will be refused. Pick it from the dropdown above to continue it, or choose another name.`;cls='sub pf-hint-warn';}
+  else{msg=`Saving creates a new run named '${name}'.`;}
+  el.textContent=msg; el.className=msg?cls:'hidden';
+}
 
 // ---------- Paper folding: direction naming ----------
 // "real" (default) leaves the prompt exactly as before. "fixed" swaps in one
@@ -1267,6 +1313,7 @@ function pfRenderModels(){$('pfModels').innerHTML=(PFCFG.models||[]).map((m,i)=>
               ondragstart="pfDragStart(event,${i})" ondragend="pfDragEnd(event)">&#9776;</span>
         <span class="muted" style="font:12px var(--mono)">#${i+1}</span>
         ${readyIcon}<b>${m.name||'model '+(i+1)}</b>
+        ${pfTrialsOf(m.name)?`<span class="trials-pill" title="Already recorded in this run's results.json - removing this model discards them">${pfTrialsOf(m.name)} trials recorded</span>`:''}
       </div>
       <button class="btn-danger btn-sm" onclick="pfDelModel(${i})">Remove</button></div>
     <div class="row">
@@ -1282,8 +1329,17 @@ function pfRenderModels(){$('pfModels').innerHTML=(PFCFG.models||[]).map((m,i)=>
     </div>
   </div>`;
 }).join('');}
+function pfTrialsOf(name){return (name&&PF_TRIALS[name])||0;}
 function pfAddModel(){PFCFG.models.push(pfDefaultModel());pfRenderModels();pfMarkDirty();}
-function pfDelModel(i){PFCFG.models.splice(i,1);pfRenderModels();pfMarkDirty();}
+// Saving a setup rewrites results.json's model list to exactly what's in the
+// form, so a model dropped here loses the trials it had already recorded -
+// irreversibly, and only once you save. Say so before it happens rather than
+// after.
+function pfDelModel(i){
+  const m=PFCFG.models[i]||{}, done=pfTrialsOf(m.name);
+  if(done&&!confirm(`Remove ${m.name}?\n\nIt has ${done} recorded trial(s) in '${PF_LOADED_NAME}'. `
+                    +`Saving or starting this setup afterwards permanently discards them.`))return;
+  PFCFG.models.splice(i,1);pfRenderModels();pfMarkDirty();}
 
 // ---------- Paper folding: reorder models by dragging ----------
 // Models run top to bottom in this list order (PaperfoldRunner just iterates
@@ -1329,8 +1385,16 @@ function pfDrop(e,i){
 function pfBuildRunBody(){
   const name=($('pf_name').value||'').trim();
   if(!name)return{error:'Enter a run name'};
-  const models=(PFCFG.models||[]).filter(m=>m.name);
+  const models=PFCFG.models||[];
   if(!models.length)return{error:'Add at least one model (with a model id picked)'};
+  // Switching a card's backend clears its model id on purpose (ids rarely
+  // carry across providers). Those cards used to be filtered out here and
+  // saved as if they'd never been added - say what's missing instead of
+  // quietly dropping it.
+  const blank=models.map((m,i)=>m.name?null:i+1).filter(n=>n);
+  if(blank.length)return{error:`Pick a model id for card #${blank.join(', #')}, or remove it.`};
+  const dupes=[...new Set(models.map(m=>m.name).filter((n,i,a)=>a.indexOf(n)!=i))];
+  if(dupes.length)return{error:`${dupes.join(', ')} listed more than once - each model can only appear once in a run.`};
   const direction_mode=$('pf_dirmode').value;
   let direction_labels=null;
   if(direction_mode=='fixed'){
@@ -1344,14 +1408,31 @@ function pfBuildRunBody(){
     direction_mode, direction_labels, old_name:PF_LOADED_NAME}};
 }
 let pfLastState=null;
+// Both Start and Save setup land here once the server has accepted the setup:
+// the form is now editing a real run under body.name, and every picker that
+// might still be pointing at the name it had before a rename has to follow it.
+async function pfAfterSaved(body){
+  const renamedFrom=PF_LOADED_NAME&&PF_LOADED_NAME!=body.name?PF_LOADED_NAME:null;
+  PF_LOADED_NAME=body.name;
+  pfClearDirty();
+  await pfLoadRuns();
+  $('pfSetupPick').value=body.name;
+  if(renamedFrom&&$('pfRunPick').value!=body.name&&
+     !(window._pfRuns||[]).some(r=>r.name==$('pfRunPick').value)){
+    $('pfRunPick').value=body.name; pfShowRun();
+  }
+  const run=(window._pfRuns||[]).find(r=>r.name==body.name);
+  PF_TRIALS={}; ((run&&run.models)||[]).forEach(m=>{if(m.trials)PF_TRIALS[m.name]=m.trials;});
+  pfRenderModels();
+  pfUpdateNameHint();
+}
 async function pfRunGo(){
   const {body,error}=pfBuildRunBody();
   if(error){toast(error,'err');return;}
   const r=await api('/api/paperfold/run/start','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
   toast('Paper-folding run started','ok');
-  PF_LOADED_NAME=body.name; pfClearDirty();
-  await pfLoadRuns(); $('pfSetupPick').value=body.name;
+  await pfAfterSaved(body);
 }
 function pfRunPause(){api('/api/paperfold/run/pause','POST');}
 function pfRunResume(){api('/api/paperfold/run/resume','POST');}
@@ -1368,24 +1449,39 @@ async function pfSaveSetup(){
   if(error){toast(error,'err');return;}
   const r=await api('/api/paperfold/setup/save','POST',body);
   if(!r.ok){toast(r.error,'err');return;}
-  toast('Setup saved (no trials run yet)','ok');
-  PF_LOADED_NAME=body.name; pfClearDirty();
-  await pfLoadRuns();
-  $('pfSetupPick').value=body.name;
+  toast('Saved '+body.name,'ok');
+  await pfAfterSaved(body);
 }
-// Copies a saved run's setup (trials/folds/direction mode/models, no trial
-// data) into a fresh "<name>_copy" run, then loads that copy into Setup so
-// you can immediately rename it and Save - the rename logic above then
-// applies cleanly since the copy is a real saved run of its own.
-async function pfDuplicateSetup(){
-  const name=$('pfSetupPick').value;
-  if(!name){toast('Pick a run first','err');return;}
-  const r=await api('/api/paperfold/setup/duplicate','POST',{run:name});
-  if(!r.ok){toast('Error: '+r.error,'err');return;}
-  toast('Duplicated to '+r.name,'ok');
-  await pfLoadRuns();
-  $('pfSetupPick').value=r.name;
-  pfPickSetupRun(r.name);
+// Copies whatever is in the Setup form right now (including edits you haven't
+// saved) into a new, unsaved run under a free "<name>_copy" name.
+//
+// Deliberately touches nothing on disk. This used to POST to the server, which
+// wrote a real "<name>_copy" folder immediately - so every time you duplicated
+// and then renamed before saving, or duplicated and changed your mind, a run
+// you never asked for was left sitting in the list, and the next duplicate of
+// the same source would collide with it and refuse the save. Now the copy only
+// becomes a folder when you press Save setup or Start, under the name you
+// actually chose.
+function pfCopyName(base){
+  const taken=new Set((window._pfRuns||[]).map(r=>r.name));
+  let n=1, name=base+'_copy';
+  while(taken.has(name)){n++; name=base+'_copy'+n;}
+  return name;
+}
+function pfDuplicateSetup(){
+  const base=($('pf_name').value||'').trim()||$('pfSetupPick').value;
+  if(!base){toast('Nothing to duplicate - load a run, or fill in the setup first','err');return;}
+  const name=pfCopyName(base);
+  $('pf_name').value=name;
+  // No longer editing the run it was copied from: a save must create this as a
+  // new run, never rename or overwrite the original.
+  PF_LOADED_NAME=null;
+  PF_TRIALS={};           // a copy starts with no trial history of its own
+  $('pfSetupPick').value='';
+  pfRenderModels();
+  pfUpdateNameHint();
+  pfMarkDirty();
+  toast(`Copied into a new setup named '${name}'. Rename it if you like, then Save setup or Start - nothing is written until you do.`,'ok');
 }
 
 // A local stopwatch, not the 700ms poll cadence - PF_TRIAL_STARTED_AT (the
@@ -1455,7 +1551,8 @@ async function pfLoadRuns(){const r=await api('/api/paperfold/runs');
   $('pfRunPick').value=prevGraph;
   $('pfSetupPick').value=prevSetup;
   $('pfDownloadAllBtn').disabled=!$('pfRunPick').value;
-  window._pfRuns=r.runs;}
+  window._pfRuns=r.runs;
+  pfUpdateNameHint();}   // which names are taken just changed
 function pfShowRun(){const name=$('pfRunPick').value;const run=(window._pfRuns||[]).find(r=>r.name==name);const bust=Date.now();
   $('pfDownloadAllBtn').disabled=!name;
   if(!name){$('pfPlots').innerHTML='<div class="empty"><b>No run selected</b>Pick a run above to see its plots.</div>';return;}
@@ -1503,14 +1600,17 @@ function pfApplyRunToSetup(run){
   if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
   if(run.num_folds!=null)$('pf_folds').value=run.num_folds;
   $('pf_dirmode').value=run.direction_mode||'real';
+  // Always overwrite the four placeholder inputs, even when this run doesn't
+  // use them - otherwise the previous run's words linger in the hidden fields
+  // and reappear the moment the mode is switched back to "fixed".
+  const dl=(run.direction_mode=='fixed'&&run.direction_labels)||{};
+  $('pf_dir_north').value=dl.north||'';
+  $('pf_dir_south').value=dl.south||'';
+  $('pf_dir_east').value=dl.east||'';
+  $('pf_dir_west').value=dl.west||'';
   pfUpdateDirMode();
-  if(run.direction_mode=='fixed'&&run.direction_labels){
-    $('pf_dir_north').value=run.direction_labels.north||'';
-    $('pf_dir_south').value=run.direction_labels.south||'';
-    $('pf_dir_east').value=run.direction_labels.east||'';
-    $('pf_dir_west').value=run.direction_labels.west||'';
-  }
   PFCFG.models=(run.models||[]).map(m=>({name:m.name,backend:m.backend||'openai',max_tokens:4096,...(m.options||{})}));
+  PF_TRIALS={}; (run.models||[]).forEach(m=>{if(m.trials)PF_TRIALS[m.name]=m.trials;});
   pfRenderModels();
 }
 function pfResetSetup(){
@@ -1518,18 +1618,30 @@ function pfResetSetup(){
   $('pf_trials').value=30;
   $('pf_folds').value=3;
   $('pf_dirmode').value='real';
+  ['north','south','east','west'].forEach(d=>{$('pf_dir_'+d).value='';});
   pfUpdateDirMode();
   PFCFG.models=[pfDefaultModel()];
+  PF_TRIALS={};
   pfRenderModels();
   PF_LOADED_NAME=null;
+  $('pfSetupPick').value='';
+  pfUpdateNameHint();
   pfClearDirty();
 }
 function pfPickSetupRun(name){
+  // Loading replaces everything in the form, so don't do it silently on top of
+  // edits that were never saved.
+  if(PF_DIRTY&&!confirm('Discard the unsaved changes to this setup and load '
+                        +(name?"'"+name+"'":'a blank setup')+'?')){
+    $('pfSetupPick').value=PF_LOADED_NAME||'';
+    return;
+  }
   if(!name){pfResetSetup();return;}
   const run=(window._pfRuns||[]).find(r=>r.name==name);
   if(!run){toast('Could not find that run','err');return;}
   pfApplyRunToSetup(run);
   PF_LOADED_NAME=name;
+  pfUpdateNameHint();
   pfClearDirty();
   // Keep the Graphs picker pointed at the same run, so its existing plots
   // are right there while you decide how to change it.
