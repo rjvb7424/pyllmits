@@ -94,17 +94,38 @@ class PaperfoldRunner:
         return self.run_dir / "results.json"
 
     def _ensure_model_records(self) -> None:
-        for spec in self.model_specs:
-            record = self.results["models"].setdefault(
-                spec.name, {"error": None, "trials": []}
-            )
-            # Refresh backend/options every time (not just on first creation)
-            # so editing a model's tuning (max_tokens, temperature, ...) and
-            # re-saving/resuming actually updates what's on disk, instead of
-            # the first-ever save winning forever.
-            record["backend"] = spec.backend
-            record["slug"] = spec.slug
-            record["options"] = spec.options
+        """Rebuild the models dict to exactly match model_specs - same order
+        and same membership - every time a runner is constructed (Save setup
+        or Start both go through here).
+
+        Order: a dict only remembers *first-insertion* order, so previously
+        this only ever recorded the order models were first added in, and a
+        later drag-reorder in Setup never stuck - reloading the run always
+        showed the original order again. Rebuilding fresh each time instead
+        of setdefault-ing into the old dict makes the saved order match
+        whatever's in model_specs right now.
+
+        Membership: a model no longer in model_specs (removed in Setup) is
+        simply left out of the rebuilt dict, so its recorded trials are
+        dropped along with it instead of lingering as orphaned data for a
+        model that's no longer part of the run.
+
+        Existing trials/error for a model still present carry over untouched;
+        only backend/slug/options are refreshed to the latest configured
+        values (so editing max_tokens/temperature and re-saving updates what's
+        on disk instead of the first-ever save winning forever).
+        """
+        existing = self.results.get("models", {})
+        self.results["models"] = {
+            spec.name: {
+                "backend": spec.backend,
+                "slug": spec.slug,
+                "options": spec.options,
+                "error": existing.get(spec.name, {}).get("error"),
+                "trials": existing.get(spec.name, {}).get("trials", []),
+            }
+            for spec in self.model_specs
+        }
 
     def save(self) -> None:
         """Persist the current setup/results to disk. Safe to call without
