@@ -1029,13 +1029,7 @@ class Handler(BaseHTTPRequestHandler):
         plots.mkdir(parents=True, exist_ok=True)
         if not rows:
             return {"ok": True, "plots": [], "warning": "No scored trials yet."}
-        for kind, fn in (
-            ("letter_distribution", ar.plot_letter_distribution),
-            ("accuracy_by_model", ar.plot_accuracy_by_model),
-            ("accuracy_vs_cost", ar.plot_accuracy_vs_cost),
-            ("elapsed_time_by_model", ar.plot_elapsed_time_by_model),
-        ):
-            fn(rows, plots / ar.plot_filename(kind, run_name), run_name)
+        ar.build_all_plots(rows, plots, run_name)
         return {"ok": True, "plots": [f.name for f in sorted(plots.glob("*.png"))]}
 
     # -- API keys / .env -------------------------------------------------------

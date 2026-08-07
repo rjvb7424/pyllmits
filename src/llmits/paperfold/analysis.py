@@ -19,11 +19,12 @@ analyze_results.py, with these changes:
     are hidden.
 
 Plots are written to <run_dir>/plots/ as <kind>_of_<name>.png, matching the
-naming convention analyze_results.py (Crafter's) already uses:
-  * letter_distribution_of_<name>.png - predicted vs correct answer letter
-  * accuracy_by_model_of_<name>.png   - accuracy ranked best-to-worst
-  * accuracy_vs_cost_of_<name>.png    - accuracy vs tokens spent / time spent
+naming convention llmits.analysis.plots (Crafter's) already uses:
+  * letter_distribution_of_<name>.png   - predicted vs correct answer letter
+  * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst
+  * accuracy_vs_cost_of_<name>.png      - accuracy vs tokens spent / time spent
   * elapsed_time_by_model_of_<name>.png - average response time per model
+  * tokens_by_model_of_<name>.png       - average token consumption per model
 """
 
 from __future__ import annotations
@@ -57,7 +58,8 @@ FALLBACK_COLORMAPS = [plt.get_cmap("Greens"), plt.get_cmap("Purples"), plt.get_c
 # The range of shades to use for models within a provider's colormap
 SHADE_RANGE = (0.35, 0.85)
 
-PLOT_KINDS = ("letter_distribution", "accuracy_by_model", "accuracy_vs_cost", "elapsed_time_by_model")
+PLOT_KINDS = ("letter_distribution", "accuracy_by_model", "accuracy_vs_cost",
+              "elapsed_time_by_model", "tokens_by_model")
 
 
 def plot_filename(kind: str, name_slug: str) -> str:
@@ -267,33 +269,78 @@ def plot_accuracy_vs_cost(rows, out: Path, experiment_name: str) -> None:
     plt.close(fig)
 
 
-def plot_elapsed_time_by_model(rows, out: Path, experiment_name: str) -> None:
-    """Average response time per model, since slower/thinking models
-    and fast/lite models are worth comparing directly."""
+def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
+                       field: str, metric: str, xlabel: str, subtitle: str, fmt) -> None:
+    """Shared shape for the per-model cost charts (response time, token
+    consumption): average ``field`` over each model's trials, drawn as
+    horizontal bars so the figure stays a sane size however many models a
+    run has. Ranked so the value increases up the chart."""
     by_model: dict[str, list[float]] = {}
     for r in rows:
         m = r.get("model_version", "unknown")
-        by_model.setdefault(m, []).append(r.get("elapsed_seconds") or 0)
+        by_model.setdefault(m, []).append(float(r.get(field) or 0))
 
-    # Slowest first, so the fastest model ends up at the top of the chart -
-    # mirrors plot_accuracy_by_model's best-at-top ranking. Horizontal bars
-    # keep the figure a sane size however many models a run has.
-    ranked = sorted(by_model.items(), key=lambda kv: sum(kv[1]) / len(kv[1]), reverse=True)
+    ranked = sorted(by_model.items(), key=lambda kv: sum(kv[1]) / len(kv[1]))
     models = [m for m, _ in ranked]
-    avg_elapsed = [sum(v) / len(v) for _, v in ranked]
+    averages = [sum(v) / len(v) for _, v in ranked]
     colors_map = model_color_map(rows)
     colors = [colors_map[m] for m in models]
-    xmax = max(avg_elapsed, default=0) or 1.0
+    xmax = max(averages, default=0) or 1.0
 
     fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * len(models) + 1)))
-    bars = ax.barh(models, avg_elapsed, color=colors)
-    for bar, v in zip(bars, avg_elapsed):
+    bars = ax.barh(models, averages, color=colors)
+    for bar, v in zip(bars, averages):
         ax.text(bar.get_width() + 0.01 * xmax, bar.get_y() + bar.get_height() / 2,
-                f"{v:.2f}s" if v > 0 else "-", va="center", fontsize=9, color="#52514e")
-    ax.set_xlabel("Average response time (seconds per trial)", color=LABEL_GRAY, fontsize=10)
+                fmt(v), va="center", fontsize=9, color="#52514e")
+    ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
-    ax.set_title(f"Average response time by model of {display_name(experiment_name)} experiment",
+    ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
-    _subtitle(ax, "models ranked fastest to slowest")
+    _subtitle(ax, subtitle)
     ax.set_xlim(0, 1.15 * xmax)
     _finish(fig, ax, out, rotate_xticks=False)
+
+
+def plot_elapsed_time_by_model(rows, out: Path, experiment_name: str) -> None:
+    """Average response time per model, since slower/thinking models
+    and fast/lite models are worth comparing directly."""
+    _plot_avg_by_model(
+        rows, out, experiment_name,
+        field="elapsed_seconds",
+        metric="Average response time by model",
+        xlabel="Average response time (seconds per trial)",
+        subtitle="response time increases up the chart",
+        fmt=lambda v: f"{v:.2f}s" if v > 0 else "-",
+    )
+
+
+def plot_tokens_by_model(rows, out: Path, experiment_name: str) -> None:
+    """Average token consumption per model - the token-cost counterpart to
+    the response-time chart."""
+    _plot_avg_by_model(
+        rows, out, experiment_name,
+        field="total_tokens",
+        metric="Average token consumption by model",
+        xlabel="Average token consumption (total tokens per trial)",
+        subtitle="token consumption increases up the chart",
+        fmt=lambda v: f"{v:,.0f}" if v > 0 else "-",
+    )
+
+
+def build_all_plots(rows, plots_dir: Path, slug: str) -> None:
+    """Write every plot in ``PLOT_KINDS`` for one run into ``plots_dir``.
+
+    The single authority on what "all plots" means for the paper-folding
+    side (same pattern as llmits.analysis.plots.build_all_plots), so adding
+    a plot never requires touching the Studio server.
+    """
+    plotters = {
+        "letter_distribution": plot_letter_distribution,
+        "accuracy_by_model": plot_accuracy_by_model,
+        "accuracy_vs_cost": plot_accuracy_vs_cost,
+        "elapsed_time_by_model": plot_elapsed_time_by_model,
+        "tokens_by_model": plot_tokens_by_model,
+    }
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    for kind in PLOT_KINDS:
+        plotters[kind](rows, plots_dir / plot_filename(kind, slug), slug)
