@@ -28,7 +28,6 @@ import re
 import shutil
 import sys
 import threading
-import zipfile
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -497,13 +496,19 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # -- helpers --------------------------------------------------------------
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", download_name=None):
+        """download_name, when set, marks the response as a file download
+        (Content-Disposition: attachment) so the browser saves it through its
+        normal download UI instead of rendering it."""
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
         elif isinstance(body, str):
             body = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if download_name:
+            safe = re.sub(r'[^A-Za-z0-9._-]', "_", download_name)
+            self.send_header("Content-Disposition", f'attachment; filename="{safe}"')
         self.send_header("Content-Length", str(len(body)))
         # Nothing here is ever worth reusing from cache: the page is rebuilt
         # from ui.py on every server restart, and every API response
@@ -543,7 +548,8 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/plot":
                 fp = RUNS_DIR / q["run"][0] / "plots" / q["file"][0]
                 if fp.exists():
-                    return self._send(200, fp.read_bytes(), "image/png")
+                    dl = q["file"][0] if q.get("download") else None
+                    return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
             if p == "/api/video":
                 fp = RUNS_DIR / q["run"][0] / "videos" / q["file"][0]
@@ -589,16 +595,9 @@ class Handler(BaseHTTPRequestHandler):
                 run_dir = self._paperfold_run_dir(q["run"][0])
                 fp = (run_dir / "plots" / q["file"][0]) if run_dir else None
                 if fp and fp.exists():
-                    return self._send(200, fp.read_bytes(), "image/png")
+                    dl = q["file"][0] if q.get("download") else None
+                    return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
-            # Plain GET links (the UI clicks a temporary <a href>), so these
-            # go through the browser's own download machinery.
-            if p == "/api/run/download_plots":
-                run = q["run"][0]
-                return self._send_plots_zip(run, self._run_dir(run))
-            if p == "/api/paperfold/run/download_plots":
-                run = q["run"][0]
-                return self._send_plots_zip(run, self._paperfold_run_dir(run))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -903,36 +902,6 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that experiment is currently running - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
-
-    def _send_plots_zip(self, run_name: str, run_dir: Path | None):
-        """Stream a run's plot PNGs as one <run>_graphs.zip attachment, going
-        through the browser's normal download machinery - so the user gets
-        the standard download UI (progress shelf, animation, Downloads list).
-
-        This replaced an older shortcut that copied the PNGs into the
-        server's own ~/Downloads: that skipped the browser's download UI
-        entirely and only worked when the Studio server and the browser were
-        the same machine (it silently did the wrong thing on Colab).
-        """
-        if run_dir is None:
-            return self._send(400, {"ok": False, "error": "invalid run name"})
-        plots = run_dir / "plots"
-        files = sorted(plots.glob("*.png")) if plots.exists() else []
-        if not files:
-            return self._send(404, {"ok": False, "error": "no plots for this run"})
-        folder = re.sub(r"[^A-Za-z0-9._-]", "_", run_name) + "_graphs"
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in files:
-                zf.write(f, arcname=f"{folder}/{f.name}")
-        data = buf.getvalue()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/zip")
-        self.send_header("Content-Disposition", f'attachment; filename="{folder}.zip"')
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store, must-revalidate")
-        self.end_headers()
-        self.wfile.write(data)
 
     # -- paper folding ----------------------------------------------------------
     def _paperfold_run_dir(self, run_name: str) -> Path | None:
