@@ -388,9 +388,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
         New to Pyllmits? The interactive Google Colab notebook is the full user guide - it
         walks you through this Studio step by step, from setup to reading your first results.
       </div>
-      <div class="pypi-row">
-        <pre>colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J</pre>
-        <a class="btn-primary btn-sm" href="https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing" target="_blank" rel="noopener noreferrer">Open in Colab &#8594;</a>
+      <div class="pypi-row" style="flex-wrap:nowrap">
+        <!-- flex-shrink + ellipsis (instead of the row's usual wrap) so the
+             long Colab URL gives way and the button stays on the same row,
+             matching the PyPI and GitHub cards. -->
+        <pre style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis">colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J</pre>
+        <a class="btn-primary btn-sm" href="https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing" target="_blank" rel="noopener noreferrer" style="flex-shrink:0">Open in Colab &#8594;</a>
       </div>
     </div>
 
