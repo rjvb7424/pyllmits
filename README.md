@@ -1,226 +1,67 @@
-# Crafter LLM Experiment Harness
+# 🧩 Pyllmits Documentation & User Guide
 
-Drop a language model into a hand-built Crafter world, give it a snapshot each
-turn, let it pick an action, and measure whether it completes an objective using
-Crafter's **built-in achievement system**. Everything — world layout, goal,
-models, turn/trial counts — is driven by one YAML file.
+_Last updated: August 5, 2026_
 
-```
-llmits                         # open the Studio UI in your browser (the default)
-llmits --run                   # run + plots + viewer, using config.yaml
-llmits --run my_config.yaml    # a different experiment
-```
+> 📓 This guide is also available as an interactive [Google Colab notebook](https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing).
 
-`python -m llmits` and `python main.py` work identically, and from the
-installed pip package so does the classic notebook entry point:
+**Pyllmits** tests whether AI models can actually do spatial reasoning, using two very different challenges:
+
+1. **Crafter** — drop a model into a hand-built 2D survival world and see if it can navigate, gather resources, and complete an objective, using nothing but a text description of what it sees each turn.
+2. **Paper Folding** — a classic spatial puzzle: fold a grid, punch a hole, and ask the model which of five unfolded results matches. You can even swap "north/south/east/west" for made-up words, to check whether a model actually understands direction or just recognizes those specific words.
+
+Both experiments run through the same interface, so testing OpenAI, Gemini, and Hugging Face models side by side is just a matter of adding them to the same run. This guide walks through the website itself — the pages, what they're for, and how they fit together.
+
+**Contents**
+1. [Setup](#1--setup)
+2. [Adding your API keys](#2--adding-your-api-keys)
+3. [Testing a model in Crafter](#3--testing-a-model-in-crafter)
+4. [Testing a model with Paper Folding](#4--testing-a-model-with-paper-folding)
+5. [Putting it to use](#5--putting-it-to-use)
+
+## 1 · Setup
+
+Three lines gets you in:
 
 ```python
+!pip install pyllmits
 import main
 main.main()
 ```
 
-Outputs land in `runs/<experiment_name>/`:
+Running that cell starts a small local server and prints a link — click it and you're in.
 
-```
-results.json          every turn of every trial (saved after each trial)
-videos/               ONE mp4 per model - the full run, start to finish
-plots/                success_rate, turns_to_success, think_time, success_matrix
-viewer.html           interactive replay: state + prompt + response + timing
-```
+(Outside Colab: `pip install pyllmits`, then run `llmits` in a terminal. It opens a browser tab for you automatically.)
 
----
+## 2 · Adding your API keys
 
-## Install
+The first thing you'll see is a welcome screen asking for API keys — OpenAI, Gemini, Hugging Face. Paste in whichever ones you have; you don't need all three, just the providers whose models you actually want to test.
 
-```
-pip install -e .
-```
+Keys are saved locally and never shown back to you in plain text. You can add, remove, or check them at any point later from the **Providers** page, without restarting anything.
 
-`torch`, `transformers`, `accelerate` are only needed for the `huggingface`
-backend (local models). The `mock` baselines run with nothing but Crafter +
-numpy + Pillow. On Apple Silicon, `torch` gives you the MPS device automatically.
+## 3 · Testing a model in Crafter
 
----
+**Configs** is where every experiment you've set up lives, as a card: its world size, its objective, how many trials it's completed, and which models are in it. From each card you can **Run** it, **Edit** it, **Duplicate** it to try a variation, or **Delete** it.
 
-## The one loop
+Hit **+ New config** (or **Edit** an existing one) and you land in the **Editor** — this is where an experiment actually gets built. Give it a name, decide how many trials and turns each one gets, and pick a goal (collect wood, craft a pickaxe, defeat a zombie...). The world itself is a grid you paint by hand: click a tile type — grass, water, trees, stone, a zombie, the player's starting spot — and click it onto the map. Below that is the prompt the model will actually see, and the list of models you want to test — add as many as you like, mixing providers freely.
 
-Each turn the harness:
+Once it's set up, head to **Run**, pick the config, and hit **Go**. It runs in the background — Pause, Resume, or Stop it any time — while a live panel shows exactly what's happening turn by turn: which model is playing, what it's looking at, what it just replied, and how long it took to think.
 
-1. Renders the world to a text map (and an in-memory frame for the video).
-2. Fills your prompt template with the map, legend, inventory, achievements,
-   position and facing.
-3. Sends it to the model and times the response.
-4. Parses an action out of the reply and steps the environment.
-5. Checks the objective. Stops the trial on success (or death, or `max_turns`).
+When a run finishes (or even partway through one), **Graphs** turns the results into charts — success rate per model, how long each one took to respond, which trials succeeded or failed — so you can compare models at a glance. If you change something and rerun, hit **Regenerate graphs** to refresh them without rerunning the experiment. **Download all** saves every chart straight to your computer. **Videos** does the same thing for the actual gameplay — a replay clip per model, per run.
 
----
+Want to test more? Raise the trial count on a config you've already run, or drop in a new model, and hitting Run again only does the new work — it never throws out what's already there.
 
-## Customising — it's all in the config
+## 4 · Testing a model with Paper Folding
 
-### Change the world size
+Paper Folding has its own page, separate from Crafter, with everything on one screen.
 
-```yaml
-world:
-  size: [15, 15]
-```
+**Setup** is where you name a run, decide how many trials and how many folds each puzzle gets, and pick your models — same mix-and-match across providers as Crafter. The one thing unique to this test is **direction names**: leave it on real names, type in your own placeholder words (fold "blue-wise" instead of "north"), or let it pick fresh random words for every single trial. That last option is the real test — if a model's accuracy holds up even when the words are meaningless and different every time, that's a much stronger sign it's actually reasoning about the fold rather than just recognizing "north."
 
-### Place things where you want them
+Already run something and want to pick up where you left off? The **"resume or edit a previous run"** menu at the top of Setup loads an old run right back into the form — raise the trial count and only the missing trials run, or add a new model and just that one starts fresh.
 
-`positions` puts features at exact tiles; `count` scatters them randomly on free
-ground; `rect: [x, y, w, h]` fills a block (used here for the pond).
+**Run** starts it, with a live status panel showing the current model, trial, its last answer, and — if you're using placeholder words — exactly which words meant which direction on that trial. **Graphs**, right below it, works exactly like Crafter's: pick a run, view or regenerate its charts, or delete it once you're done with it.
 
-```yaml
-world:
-  features:
-    trees:
-      positions: [[2, 2], [7, 3], [4, 7]]
-    water:
-      rect: [6, 6, 3, 3]
-    stone:
-      count: 4
-  entities:
-    cow:
-      positions: [[3, 5]]
-```
+## 5 · Putting it to use
 
-### Swap the objective (the whole point)
+The point of all this is comparison: run the same setup against several models at once, and the graphs show you who's actually good at this versus who just talks a good game. Because everything (results, graphs, replays) is saved to disk the moment it's produced, you can walk away mid-run, come back later, add a model you forgot, or push the trial count higher — and pick up exactly where you left off instead of starting over.
 
-Change **one line**. Any of Crafter's 22 achievements works:
-
-```yaml
-objective:
-  type: achievement
-  target: make_stone_pickaxe      # was: collect_wood
-```
-
-Or check inventory quantities instead:
-
-```yaml
-objective:
-  type: inventory
-  item: wood
-  amount: 3
-```
-
-The success test lives in `src/llmits/env/success.py` (`ObjectiveChecker`) —
-that's the single module to edit if you ever want a bespoke win condition.
-
-### Turns, trials, seeds
-
-```yaml
-experiment:
-  num_trials: 5
-  max_turns: 100
-  seed: 0
-  same_world_each_trial: true   # false = a fresh seeded layout per trial
-```
-
-### Models
-
-```yaml
-models:
-  - name: Qwen/Qwen2.5-3B-Instruct
-    backend: huggingface
-    max_new_tokens: 256
-    temperature: 0.7
-  - name: heuristic-baseline      # zero-download sanity check
-    backend: mock
-    policy: heuristic
-```
-
-`huggingface` models load **one at a time** and are unloaded (with cache
-clearing) before the next — so a big model won't sit in memory alongside the
-next one. Runs are resumable: if a run is interrupted, rerunning skips the
-trials already in `results.json`.
-
----
-
-## The video
-
-At the end of a run, each model's turns are stitched into a single MP4 at
-`runs/<name>/videos/<model>.mp4` - one continuous video of the whole run, with a
-title card before each trial. No per-turn screenshots are written to disk.
-
-Turn it off or change the speed in the config:
-
-```yaml
-experiment:
-  record_video: true
-  video_fps: 4
-```
-
-Needs `imageio-ffmpeg` (a package dependency) - it bundles ffmpeg, so there is no
-system install.
-
-## Watching it run live
-
-```
-llmits --run                     # runs + serves a real-time view (on by default)
-```
-
-This starts a small local web server (default http://127.0.0.1:8000) and prints
-the URL. Open it in a browser and the page refreshes itself every turn while the
-run happens: current game state, the prompt, the model's raw response, the
-action taken, the think time, and a running solved-count. Pick a different port
-with `--port 8123`. When the run finishes the final state stays on screen until
-you press Ctrl-C.
-
-Use this to confirm an experiment is actually working. For a careful after-the-
-fact review, use the static replay below.
-
-## Seeing what the model did
-
-```
-python -m llmits.analysis.viewer   # (re)build viewer.html from the latest run
-```
-
-Open `runs/<name>/viewer.html`. Pick a model and trial, then scrub through the
-turns (arrow keys work). Each turn shows the rendered state, the exact prompt,
-the model's raw response, the action taken, the turn number and the think time.
-
-Rebuild plots without rerunning trials:
-
-```
-llmits --run --skip-run
-```
-
----
-
-## Project layout
-
-All source code lives in the `llmits` package under `src/`:
-
-| Path (under `src/llmits/`) | Role |
-|---|---|
-| `cli.py` | the `llmits` command: Studio by default, `--run` for headless runs |
-| `config.py` | the experiment definition — typed loader/validator for `config.yaml` |
-| `experiment.py` | the runner: trials, logging, crash-safe saving, resume |
-| `run_control.py` | thread-safe play/pause/stop switch shared by every runner |
-| `live_viewer.py` | real-time browser view of a run while it happens |
-| `colab_support.py` | best-effort Google Colab support for the local web servers |
-| `env/world.py` | custom Crafter env + world builder |
-| `env/observation.py` | world → text map, legend, PNG frames |
-| `env/prompt.py` | fills the prompt template |
-| `env/actions.py` | parses an action out of the model's text |
-| `env/success.py` | **the swappable objective checker** |
-| `models/` | model backends (`openai`, `gemini`, `huggingface`, `mock`) + registry |
-| `analysis/plots.py` | results.json → plots |
-| `analysis/viewer.py` | results.json → viewer.html |
-| `analysis/videos.py` | in-memory frames → one mp4 per model |
-| `studio/` | the browser Studio: `server.py` (stdlib HTTP + JSON API) + `ui.py` (single-page app) |
-| `paperfold/` | the independent paper-folding spatial-reasoning benchmark |
-| `assets/` | static files bundled with the package (logo, demo clip) |
-
-At the repository root, `main.py` is a thin compatibility launcher (it ships
-in the pip package too, so `import main; main.main()` keeps working), and
-experiment configs live in `configs/`, run outputs in `runs/` and
-`paperfold_runs/` — next to `config.yaml`.
-
----
-
-## Notes
-
-- Local HuggingFace inference needs network access on first load (to download
-  weights) and, for gated models, a logged-in `huggingface-cli`.
-- All model-facing code (`llmits.env`, `llmits.models`) is free of
-  `print`/`input`; console output goes through `logging` in the runner only.
+The Paper Folding side pushes that comparison one step further: run it once with real direction names, once with random placeholder words, and compare the two. A big drop in accuracy between them is the clearest signal you'll get that a model's "spatial reasoning" was leaning on the words themselves, not the geometry.

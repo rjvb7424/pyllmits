@@ -372,6 +372,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="welcome-demo-caption">gpt-5.6-sol navigating an 18&times;18 maze with two zombies</div>
     </div>
 
+    <p class="welcome-desc">
+      Pyllmits tests whether AI models can actually do spatial reasoning, using two very
+      different challenges: <b>Crafter</b> - a hand-built 2D survival world the model must
+      navigate, gather resources, and complete an objective in, using nothing but a text
+      description of what it sees each turn - and <b>Paper Folding</b> - a classic spatial
+      puzzle: fold a grid, punch a hole, and ask the model which of five unfolded results
+      matches. Both experiments run through this same interface, so testing OpenAI, Gemini,
+      and Hugging Face models side by side is just a matter of adding them to the same run.
+    </p>
+
+    <div class="card">
+      <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="#F9AB00"><path d="M16.9414 4.9757a7.033 7.033 0 0 0-4.9308 2.0646 7.033 7.033 0 0 0-.1232 9.8068l2.395-2.395a3.6455 3.6455 0 0 1 5.1497-5.1478l2.397-2.3989a7.033 7.033 0 0 0-4.8877-1.9297zM7.07 4.9855a7.033 7.033 0 0 0-4.8878 1.9316l2.3911 2.3911a3.6434 3.6434 0 0 1 5.0227.1271l1.7341-2.9737-.0997-.0802A7.033 7.033 0 0 0 7.07 4.9855zm15.0093 2.1721l-2.3892 2.3911a3.6455 3.6455 0 0 1-5.1497 5.1497l-2.4067 2.4068a7.0362 7.0362 0 0 0 9.9456-9.9476zM1.932 7.1674a7.033 7.033 0 0 0-.002 9.6816l2.397-2.397a3.6434 3.6434 0 0 1-.004-4.8916zm7.664 7.4235c-1.38 1.3816-3.5863 1.411-5.0168.1134l-2.397 2.395c2.4693 2.3328 6.263 2.5753 9.0072.5455l.1368-.1115z"/></svg></span>User guide &amp; documentation</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">
+        New to Pyllmits? The interactive Google Colab notebook is the full user guide - it
+        walks you through this Studio step by step, from setup to reading your first results.
+      </div>
+      <div class="pypi-row">
+        <pre>colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J</pre>
+        <a class="btn-primary btn-sm" href="https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing" target="_blank" rel="noopener noreferrer">Open in Colab &#8594;</a>
+      </div>
+    </div>
+
     <div class="card">
       <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
         <linearGradient id="pyLogoA" gradientUnits="userSpaceOnUse" x1="70.252" y1="1237.476" x2="170.659" y2="1151.089" gradientTransform="matrix(.563 0 0 -.568 -29.215 707.817)"><stop offset="0" stop-color="#5A9FD4"/><stop offset="1" stop-color="#306998"/></linearGradient>
@@ -399,21 +421,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <div class="card">
-      <h3><span class="python-logo" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="#F9AB00"><path d="M16.9414 4.9757a7.033 7.033 0 0 0-4.9308 2.0646 7.033 7.033 0 0 0-.1232 9.8068l2.395-2.395a3.6455 3.6455 0 0 1 5.1497-5.1478l2.397-2.3989a7.033 7.033 0 0 0-4.8877-1.9297zM7.07 4.9855a7.033 7.033 0 0 0-4.8878 1.9316l2.3911 2.3911a3.6434 3.6434 0 0 1 5.0227.1271l1.7341-2.9737-.0997-.0802A7.033 7.033 0 0 0 7.07 4.9855zm15.0093 2.1721l-2.3892 2.3911a3.6455 3.6455 0 0 1-5.1497 5.1497l-2.4067 2.4068a7.0362 7.0362 0 0 0 9.9456-9.9476zM1.932 7.1674a7.033 7.033 0 0 0-.002 9.6816l2.397-2.397a3.6434 3.6434 0 0 1-.004-4.8916zm7.664 7.4235c-1.38 1.3816-3.5863 1.411-5.0168.1134l-2.397 2.395c2.4693 2.3328 6.263 2.5753 9.0072.5455l.1368-.1115z"/></svg></span>User guide &amp; documentation</h3>
-      <div class="sub" style="margin-bottom:var(--s4)">
-        New to Pyllmits? The interactive Google Colab notebook is the full user guide - it
-        walks you through this Studio step by step, from setup to reading your first results.
-      </div>
-      <div class="pypi-row">
-        <a class="btn-primary btn-sm" href="https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing" target="_blank" rel="noopener noreferrer">Open the guide in Colab &#8594;</a>
-      </div>
-    </div>
-
     <p class="welcome-desc">
-      Pyllmits drops language models into a hand-built <b>Crafter</b> survival world and measures
-      whether they can complete an objective, turn by turn. This Studio is the browser UI for
-      building configs, launching runs, and reviewing results.
+      First things first: add API keys for the providers whose models you actually want to
+      test - you don't need all three. Keys are saved locally and never shown back to you in
+      plain text, and you can add, remove, or check them at any point later from the
+      <b>Providers</b> page, without restarting anything.
     </p>
 
     <div class="card">
