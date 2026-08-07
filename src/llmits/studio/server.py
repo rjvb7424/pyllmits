@@ -376,8 +376,17 @@ class PaperfoldRun:
             lowered = [v.lower() for v in labels.values()]
             if len(set(lowered)) < 4:
                 return None, None, None, {"ok": False, "error": "Direction placeholder names must all be different."}
-            if any(v in PAPERFOLD_DIRECTIONS for v in lowered):
-                return None, None, None, {"ok": False, "error": "Placeholder names can't be the real direction words."}
+            # Real direction words ARE allowed as placeholders: mapping North
+            # to "East" and so on is the Stroop-style test - the word actively
+            # contradicts its meaning. The only thing refused is a word that
+            # stands for itself (North -> "north"), since that part of the
+            # mapping is just Real mode and blurs what the run measured.
+            selfies = sorted(d for d in PAPERFOLD_DIRECTIONS if labels[d].lower() == d)
+            if selfies:
+                return None, None, None, {"ok": False, "error":
+                         f"A placeholder can't be the direction it stands for "
+                         f"({', '.join(s.capitalize() for s in selfies)}). Shuffled real "
+                         f"words (Stroop-style) are fine - just not a word meaning itself."}
             direction_labels = labels
         else:
             direction_labels = None
