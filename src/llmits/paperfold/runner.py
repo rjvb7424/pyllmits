@@ -288,15 +288,27 @@ class PaperfoldRunner:
         if self.results_path.exists():
             existing = json.loads(self.results_path.read_text())
             old_fp = existing.get("config_fingerprint")
+            has_trials = any(m.get("trials")
+                             for m in existing.get("models", {}).values())
             if old_fp is not None and old_fp != fingerprint:
-                raise ValueError(
-                    f"'{self.run_name}' already has results with a different "
-                    f"setup ({old_fp} vs {fingerprint}). Merging them would "
-                    f"give a meaningless accuracy number. Pick a different "
-                    f"run name, or delete {self.run_dir} to start over."
-                )
-            LOG.info("Found existing results - resuming (config matches).")
-            existing.setdefault("config_fingerprint", fingerprint)
+                # Only refuse when there are real trials to protect - mixing
+                # results from two setups would give a meaningless accuracy
+                # number. A trial-less results.json is just a saved setup
+                # (created by Save setup, or a Start that never got a trial
+                # in), so a setup change simply replaces it.
+                if has_trials:
+                    raise ValueError(
+                        f"'{self.run_name}' already has results with a different "
+                        f"setup ({old_fp} vs {fingerprint}). Merging them would "
+                        f"give a meaningless accuracy number. Pick a different "
+                        f"run name, or delete {self.run_dir} to start over."
+                    )
+                LOG.info("Existing results have no trials - adopting the new setup.")
+                existing["config_fingerprint"] = fingerprint
+                existing["models"] = {}
+            else:
+                LOG.info("Found existing results - resuming (config matches).")
+                existing.setdefault("config_fingerprint", fingerprint)
             # Keep current: on resume, num_trials may have grown - the stored
             # value would otherwise stay stale and mislead the plots.
             existing["num_trials"] = self.num_trials
