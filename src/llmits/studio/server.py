@@ -28,6 +28,7 @@ import re
 import shutil
 import sys
 import threading
+import zipfile
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -590,6 +591,14 @@ class Handler(BaseHTTPRequestHandler):
                 if fp and fp.exists():
                     return self._send(200, fp.read_bytes(), "image/png")
                 return self._send(404, {"error": "not found"})
+            # Plain GET links (the UI clicks a temporary <a href>), so these
+            # go through the browser's own download machinery.
+            if p == "/api/run/download_plots":
+                run = q["run"][0]
+                return self._send_plots_zip(run, self._run_dir(run))
+            if p == "/api/paperfold/run/download_plots":
+                run = q["run"][0]
+                return self._send_plots_zip(run, self._paperfold_run_dir(run))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -641,9 +650,6 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/run/delete":
                 status, result = self._delete_run(self._body().get("run", ""))
                 return self._send(status, result)
-            if p == "/api/run/download_plots":
-                status, result = self._download_plots(self._body().get("run", ""))
-                return self._send(status, result)
             if p == "/api/env/save":
                 return self._send(200, self._save_env(self._body()))
             if p == "/api/env/remove":
@@ -676,9 +682,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(status, result)
             if p == "/api/paperfold/analyze":
                 return self._send(200, self._regen_paperfold_graphs(self._body()["run"]))
-            if p == "/api/paperfold/run/download_plots":
-                status, result = self._download_paperfold_plots(self._body().get("run", ""))
-                return self._send(status, result)
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -901,34 +904,35 @@ class Handler(BaseHTTPRequestHandler):
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
 
-    def _download_plots(self, run_name: str) -> tuple[int, dict]:
-        """Copy a run's plot PNGs into a fresh folder under the user's
-        Downloads, and report its path back.
+    def _send_plots_zip(self, run_name: str, run_dir: Path | None):
+        """Stream a run's plot PNGs as one <run>_graphs.zip attachment, going
+        through the browser's normal download machinery - so the user gets
+        the standard download UI (progress shelf, animation, Downloads list).
 
-        The Studio server and the browser are the same machine for this local
-        tool, so "download all" doesn't need to go through the browser's
-        download machinery (a zip, or one file-picker permission per click)
-        at all - the backend can just place a real folder of PNGs directly
-        where a download would have landed.
+        This replaced an older shortcut that copied the PNGs into the
+        server's own ~/Downloads: that skipped the browser's download UI
+        entirely and only worked when the Studio server and the browser were
+        the same machine (it silently did the wrong thing on Colab).
         """
-        run_dir = self._run_dir(run_name)
         if run_dir is None:
-            return 400, {"ok": False, "error": "invalid run name"}
+            return self._send(400, {"ok": False, "error": "invalid run name"})
         plots = run_dir / "plots"
         files = sorted(plots.glob("*.png")) if plots.exists() else []
         if not files:
-            return 404, {"ok": False, "error": "no plots for this run"}
-        downloads = Path.home() / "Downloads"
-        downloads.mkdir(exist_ok=True)
-        dest = downloads / f"{run_name}_graphs"
-        n = 2
-        while dest.exists():
-            dest = downloads / f"{run_name}_graphs_{n}"
-            n += 1
-        dest.mkdir(parents=True)
-        for f in files:
-            shutil.copy2(f, dest / f.name)
-        return 200, {"ok": True, "path": str(dest), "count": len(files)}
+            return self._send(404, {"ok": False, "error": "no plots for this run"})
+        folder = re.sub(r"[^A-Za-z0-9._-]", "_", run_name) + "_graphs"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                zf.write(f, arcname=f"{folder}/{f.name}")
+        data = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{folder}.zip"')
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        self.end_headers()
+        self.wfile.write(data)
 
     # -- paper folding ----------------------------------------------------------
     def _paperfold_run_dir(self, run_name: str) -> Path | None:
@@ -991,29 +995,6 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that run is currently in progress - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
-
-    def _download_paperfold_plots(self, run_name: str) -> tuple[int, dict]:
-        """Copy a paper-folding run's plot PNGs into a fresh folder under the
-        user's Downloads. Mirrors _download_plots()'s shape for the Crafter
-        side - same local-machine shortcut, just scoped to paperfold_runs/."""
-        run_dir = self._paperfold_run_dir(run_name)
-        if run_dir is None:
-            return 400, {"ok": False, "error": "invalid run name"}
-        plots = run_dir / "plots"
-        files = sorted(plots.glob("*.png")) if plots.exists() else []
-        if not files:
-            return 404, {"ok": False, "error": "no plots for this run"}
-        downloads = Path.home() / "Downloads"
-        downloads.mkdir(exist_ok=True)
-        dest = downloads / f"{run_name}_graphs"
-        n = 2
-        while dest.exists():
-            dest = downloads / f"{run_name}_graphs_{n}"
-            n += 1
-        dest.mkdir(parents=True)
-        for f in files:
-            shutil.copy2(f, dest / f.name)
-        return 200, {"ok": True, "path": str(dest), "count": len(files)}
 
     def _regen_paperfold_graphs(self, run_name):
         """Rebuild all plots for a paper-folding run from its results.json (no

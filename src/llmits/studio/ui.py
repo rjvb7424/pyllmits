@@ -1171,12 +1171,16 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
-// Download-all: regenerate the graphs so they're current, then have the
-// server copy every plot into one real folder under ~/Downloads (see
-// /api/run/download_plots in server.py). The Studio server and the browser
-// are the same machine for this local tool, so this sidesteps the browser's
-// download machinery entirely - no zip, no per-click file-picker permission,
-// no loose files scattered in the Downloads root.
+// Download-all: regenerate the graphs so they're current, then click a
+// temporary link to /api/run/download_plots (see server.py), which streams
+// them as one <run>_graphs.zip through the browser's own download machinery
+// - real download animation, shows up in the Downloads shelf, and works
+// even when the Studio is served remotely (e.g. Colab).
+function triggerDownload(url){
+  const a=document.createElement('a');
+  a.href=url; a.download='';
+  document.body.appendChild(a); a.click(); a.remove();
+}
 async function downloadAllGraphs(){
   const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1187,9 +1191,8 @@ async function downloadAllGraphs(){
     if(!r.ok){toast('Error: '+r.error,'err');return;}
     await loadRuns(); $('runPick').value=name; showRun();
     if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
-    const d=await api('/api/run/download_plots','POST',{run:name});
-    if(!d.ok){toast('Error: '+d.error,'err');return;}
-    toast(`Saved ${d.count} graphs to ${d.path}`,'ok');
+    triggerDownload('/api/run/download_plots?run='+encodeURIComponent(name));
+    toast(`Downloading ${r.plots.length} graphs\u2026`,'ok');
   } finally {
     btn.disabled=!$('runPick').value;
   }
@@ -1566,11 +1569,9 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
-// Same shortcut as Crafter's downloadAllGraphs(): regenerate so the graphs
-// are current, then have the server copy every PNG into one real folder
-// under ~/Downloads (see _download_paperfold_plots in server.py) - no zip,
-// no per-click browser file-picker, since Studio and the browser are the
-// same machine for this local tool.
+// Same flow as Crafter's downloadAllGraphs(): regenerate so the graphs are
+// current, then stream them as one zip through the browser's own download
+// machinery (see _send_plots_zip in server.py).
 async function pfDownloadAllGraphs(){
   const name=$('pfRunPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1581,9 +1582,8 @@ async function pfDownloadAllGraphs(){
     if(!r.ok){toast('Error: '+r.error,'err');return;}
     await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun();
     if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
-    const d=await api('/api/paperfold/run/download_plots','POST',{run:name});
-    if(!d.ok){toast('Error: '+d.error,'err');return;}
-    toast(`Saved ${d.count} graphs to ${d.path}`,'ok');
+    triggerDownload('/api/paperfold/run/download_plots?run='+encodeURIComponent(name));
+    toast(`Downloading ${r.plots.length} graphs…`,'ok');
   } finally {
     btn.disabled=!$('pfRunPick').value;
   }
