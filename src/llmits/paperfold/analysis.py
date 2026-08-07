@@ -22,7 +22,8 @@ Plots are written to <run_dir>/plots/ as <kind>_of_<name>.png, matching the
 naming convention llmits.analysis.plots (Crafter's) already uses:
   * letter_distribution_of_<name>.png   - predicted vs correct answer letter
   * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst
-  * accuracy_vs_cost_of_<name>.png      - accuracy vs tokens spent / time spent
+  * accuracy_vs_tokens_of_<name>.png    - accuracy vs average token spend
+  * accuracy_vs_time_of_<name>.png      - accuracy vs average response time
   * elapsed_time_by_model_of_<name>.png - average response time per model
   * tokens_by_model_of_<name>.png       - average token consumption per model
 """
@@ -58,8 +59,8 @@ FALLBACK_COLORMAPS = [plt.get_cmap("Greens"), plt.get_cmap("Purples"), plt.get_c
 # The range of shades to use for models within a provider's colormap
 SHADE_RANGE = (0.35, 0.85)
 
-PLOT_KINDS = ("letter_distribution", "accuracy_by_model", "accuracy_vs_cost",
-              "elapsed_time_by_model", "tokens_by_model")
+PLOT_KINDS = ("letter_distribution", "accuracy_by_model", "accuracy_vs_tokens",
+              "accuracy_vs_time", "elapsed_time_by_model", "tokens_by_model")
 
 
 def plot_filename(kind: str, name_slug: str) -> str:
@@ -71,14 +72,6 @@ def display_name(name: str) -> str:
     """Run name as shown in plot titles - underscores read as spaces (same
     convention as llmits.analysis.plots.get_experiment_name)."""
     return str(name).replace("_", " ").strip()
-
-
-def _subtitle(ax, text: str) -> None:
-    """A gray one-liner just above the axes, below the title (which needs
-    pad>=28 to leave room). Fixed point offset, same as the Crafter plots."""
-    ax.annotate(text, xy=(0.5, 1.0), xycoords="axes fraction",
-                xytext=(0, 8), textcoords="offset points",
-                ha="center", va="bottom", fontsize=9.5, color=LABEL_GRAY)
 
 
 def flatten(results: dict[str, Any]) -> list[dict[str, Any]]:
@@ -186,7 +179,6 @@ def plot_letter_distribution(rows, out: Path, experiment_name: str) -> None:
     ax.set_ylabel("Count (number of trials)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"Answer letter distribution of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
-    _subtitle(ax, "a skew toward one predicted letter suggests positional bias, not reasoning")
     ax.legend(fontsize=9)
     _finish(fig, ax, out, rotate_xticks=False)
 
@@ -217,17 +209,18 @@ def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"Accuracy by model of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
-    _subtitle(ax, "models ranked best to worst")
     ax.set_xlim(0, 110)
     ax.legend(fontsize=9, loc="lower right")
     _finish(fig, ax, out, rotate_xticks=False)
 
 
-def plot_accuracy_vs_cost(rows, out: Path, experiment_name: str) -> None:
-    """The efficiency view: accuracy vs how much the model spent to get
-    there (tokens and time). One point per model, bubble size = number
-    of trials. Top-left = accurate AND cheap (good). Bottom-right =
-    expensive AND wrong (bad)."""
+def _plot_accuracy_vs(rows, out: Path, experiment_name: str, *,
+                      field: str, metric: str, xlabel: str) -> None:
+    """Shared shape for the efficiency scatters: one bubble per model
+    (bubble size = number of trials), cost on x, accuracy on y. Top-left =
+    accurate AND cheap (good). Bottom-right = expensive AND wrong (bad).
+    A full-size single panel so the bubbles have room to breathe, with
+    headroom above 100% so bubbles there aren't cropped."""
     by_model: dict[str, list[dict]] = {}
     for r in rows:
         m = r.get("model_version", "unknown")
@@ -236,41 +229,63 @@ def plot_accuracy_vs_cost(rows, out: Path, experiment_name: str) -> None:
     models = sorted(by_model.keys())
     colors = model_color_map(rows)
 
-    fig, (ax_tokens, ax_time) = plt.subplots(1, 2, figsize=(13, 5.5))
+    points = []
+    for m in models:
+        rs = by_model[m]
+        acc = 100 * sum(1 for r in rs if r["is_correct"]) / len(rs)
+        avg_cost = sum((r.get(field) or 0) for r in rs) / len(rs)
+        points.append((m, avg_cost, acc, len(rs)))
+    xspan = (max(p[1] for p in points) - min(p[1] for p in points)) or 1.0
 
-    for ax, field, xlabel in [
-        (ax_tokens, "total_tokens", "Average tokens per trial (cost in tokens)"),
-        (ax_time, "elapsed_seconds", "Average response time per trial (cost in seconds)"),
-    ]:
-        for m in models:
-            rs = by_model[m]
-            acc = 100 * sum(1 for r in rs if r["is_correct"]) / len(rs)
-            avg_cost = sum((r.get(field) or 0) for r in rs) / len(rs)
-            n = len(rs)
-            ax.scatter(avg_cost, acc, s=max(80, 25 * n), color=colors[m],
-                       alpha=0.8, edgecolors="white", linewidths=1, zorder=3)
-            ax.annotate(m, (avg_cost, acc), textcoords="offset points",
-                        xytext=(6, 6), fontsize=8, color="#52514e")
-        ax.axhline(20, linestyle="--", linewidth=1, color="#898781")
-        ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
-        ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
-        ax.set_ylim(-5, 105)
-        ax.grid(True, alpha=0.3)
-        ax.spines[["top", "right"]].set_visible(False)
+    fig, ax = plt.subplots(figsize=(11, 7.5))
+    labelled: list[tuple[float, float, int]] = []  # (cost, acc, offset level)
+    for m, avg_cost, acc, n in points:
+        ax.scatter(avg_cost, acc, s=max(80, 25 * n), color=colors[m],
+                   alpha=0.8, edgecolors="white", linewidths=1, zorder=3)
+        # Stagger labels: when another label already sits at nearly the same
+        # spot, step this one further away (below, then higher above, ...) so
+        # clustered models stay readable.
+        near = [lvl for cx, cy, lvl in labelled
+                if abs(avg_cost - cx) < 0.18 * xspan and abs(acc - cy) < 5]
+        level = next(lvl for lvl in range(len(points) + 1) if lvl not in near)
+        dy = (6, -14, 20, -28, 34)[level % 5]
+        labelled.append((avg_cost, acc, level))
+        ax.annotate(m, (avg_cost, acc), textcoords="offset points",
+                    xytext=(6, dy), fontsize=8, color="#52514e")
+    ax.axhline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
+    ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
+    ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
+                 fontsize=13, pad=28)
+    ax.set_ylim(-5, 110)
+    ax.margins(x=0.08)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, loc="lower right")
+    _finish(fig, ax, out, rotate_xticks=False)
 
-    ax_tokens.set_title("Accuracy vs tokens spent", fontsize=11)
-    ax_time.set_title("Accuracy vs time spent", fontsize=11)
-    fig.suptitle(f"Accuracy vs cost of {display_name(experiment_name)} experiment", fontsize=13)
-    fig.text(0.5, 0.92, "bubble size = number of trials; dashed line marks random-guess chance (20%)",
-             ha="center", va="top", fontsize=9.5, color=LABEL_GRAY)
-    # Reserve the top strip for the suptitle + gray subtitle above both panels.
-    fig.tight_layout(rect=(0, 0, 1, 0.88))
-    fig.savefig(out, dpi=130, bbox_inches="tight")
-    plt.close(fig)
+
+def plot_accuracy_vs_tokens(rows, out: Path, experiment_name: str) -> None:
+    """Accuracy against average token spend per trial."""
+    _plot_accuracy_vs(
+        rows, out, experiment_name,
+        field="total_tokens",
+        metric="Accuracy vs token consumption",
+        xlabel="Average token consumption (total tokens per trial)",
+    )
+
+
+def plot_accuracy_vs_time(rows, out: Path, experiment_name: str) -> None:
+    """Accuracy against average response time per trial."""
+    _plot_accuracy_vs(
+        rows, out, experiment_name,
+        field="elapsed_seconds",
+        metric="Accuracy vs response time",
+        xlabel="Average response time (seconds per trial)",
+    )
 
 
 def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
-                       field: str, metric: str, xlabel: str, subtitle: str, fmt) -> None:
+                       field: str, metric: str, xlabel: str, fmt) -> None:
     """Shared shape for the per-model cost charts (response time, token
     consumption): average ``field`` over each model's trials, drawn as
     horizontal bars so the figure stays a sane size however many models a
@@ -296,7 +311,6 @@ def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
-    _subtitle(ax, subtitle)
     ax.set_xlim(0, 1.15 * xmax)
     _finish(fig, ax, out, rotate_xticks=False)
 
@@ -309,7 +323,6 @@ def plot_elapsed_time_by_model(rows, out: Path, experiment_name: str) -> None:
         field="elapsed_seconds",
         metric="Average response time by model",
         xlabel="Average response time (seconds per trial)",
-        subtitle="response time increases up the chart",
         fmt=lambda v: f"{v:.2f}s" if v > 0 else "-",
     )
 
@@ -322,7 +335,6 @@ def plot_tokens_by_model(rows, out: Path, experiment_name: str) -> None:
         field="total_tokens",
         metric="Average token consumption by model",
         xlabel="Average token consumption (total tokens per trial)",
-        subtitle="token consumption increases up the chart",
         fmt=lambda v: f"{v:,.0f}" if v > 0 else "-",
     )
 
@@ -337,10 +349,17 @@ def build_all_plots(rows, plots_dir: Path, slug: str) -> None:
     plotters = {
         "letter_distribution": plot_letter_distribution,
         "accuracy_by_model": plot_accuracy_by_model,
-        "accuracy_vs_cost": plot_accuracy_vs_cost,
+        "accuracy_vs_tokens": plot_accuracy_vs_tokens,
+        "accuracy_vs_time": plot_accuracy_vs_time,
         "elapsed_time_by_model": plot_elapsed_time_by_model,
         "tokens_by_model": plot_tokens_by_model,
     }
     plots_dir.mkdir(parents=True, exist_ok=True)
     for kind in PLOT_KINDS:
         plotters[kind](rows, plots_dir / plot_filename(kind, slug), slug)
+    # Superseded plot kinds (e.g. the old combined accuracy_vs_cost panel) -
+    # remove stale copies so they don't linger in the Studio's graphs tab.
+    for stale_kind in ("accuracy_vs_cost",):
+        stale = plots_dir / plot_filename(stale_kind, slug)
+        if stale.exists():
+            stale.unlink()
