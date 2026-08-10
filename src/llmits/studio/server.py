@@ -28,7 +28,6 @@ import re
 import shutil
 import sys
 import threading
-import zipfile
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -608,15 +607,6 @@ class Handler(BaseHTTPRequestHandler):
                     dl = q["file"][0] if q.get("download") else None
                     return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
-            if p == "/api/paperfold/plots.zip":
-                run_dir = self._paperfold_run_dir(q.get("run", [""])[0])
-                if run_dir is None:
-                    return self._send(400, {"error": "invalid run name"})
-                blob = self._paperfold_plots_zip(run_dir)
-                if blob is None:
-                    return self._send(404, {"error": "no plots for this run"})
-                return self._send(200, blob, "application/zip",
-                                  download_name=f"{run_dir.name}.zip")
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -698,6 +688,8 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/paperfold/run/delete":
                 status, result = self._delete_paperfold_run(self._body().get("run", ""))
                 return self._send(status, result)
+            if p == "/api/paperfold/plots/save":
+                return self._send(200, self._save_paperfold_plots(self._body().get("run", "")))
             if p == "/api/paperfold/analyze":
                 return self._send(200, self._regen_paperfold_graphs(self._body()["run"]))
             return self._send(404, {"error": "unknown route"})
@@ -972,26 +964,48 @@ class Handler(BaseHTTPRequestHandler):
                 })
         return out
 
-    @staticmethod
-    def _paperfold_plots_zip(run_dir: Path) -> bytes | None:
-        """Every plot PNG of a run, packed into one in-memory zip. Returns None
-        when the run has no plots yet.
+    def _save_paperfold_plots(self, run_name: str) -> dict:
+        """Copy a run's plot PNGs into a folder named after the run inside the
+        user's Downloads, and report where they landed.
 
-        Each entry is stored under a single top-level directory named after the
-        run, so unzipping produces one folder holding all the graphs rather
-        than scattering loose PNGs wherever the archive was opened. Run names
-        are already restricted to EXPERIMENT_NAME_RE, so the folder name needs
-        no further escaping and matches the .zip's own file name.
+        This is what the Graphs tab's "Download all" does. A browser download
+        can't produce a folder - the <a download> attribute ignores any path in
+        its value, and there's no API to create a directory in Downloads - so
+        the folder is made here instead, which works because the Studio server
+        runs on the same machine as the browser looking at it. PNGs already in
+        the destination are overwritten: they're older copies of the very
+        graphs being saved.
+
+        The exception is Colab, where the kernel's filesystem is a remote VM
+        and not the machine doing the downloading. "fallback" tells the caller
+        to fall back to downloading each PNG individually there.
         """
+        if colab_support.in_colab():
+            return {"ok": False, "fallback": True,
+                    "error": "on Colab the server's filesystem isn't your machine"}
+        run_dir = self._paperfold_run_dir(run_name)
+        if run_dir is None:
+            return {"ok": False, "error": "invalid run name"}
         plots = run_dir / "plots"
         files = sorted(plots.glob("*.png")) if plots.exists() else []
         if not files:
-            return None
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            return {"ok": False, "error": "no plots for this run"}
+        home = Path.home()
+        downloads = home / "Downloads"
+        dest = (downloads if downloads.is_dir() else home) / run_dir.name
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
             for f in files:
-                zf.write(f, arcname=f"{run_dir.name}/{f.name}")
-        return buf.getvalue()
+                shutil.copy2(f, dest / f.name)
+        except OSError as exc:
+            # Unwritable Downloads, full disk, ... - the browser can still
+            # save the files one by one, so offer that rather than just fail.
+            return {"ok": False, "fallback": True, "error": str(exc)}
+        try:
+            short = "~/" + str(dest.relative_to(home))
+        except ValueError:
+            short = str(dest)
+        return {"ok": True, "dir": str(dest), "short": short, "count": len(files)}
 
     def _delete_paperfold_run(self, run_name: str) -> tuple[int, dict]:
         """Delete a paper-folding run's whole folder (results.json/plots)."""

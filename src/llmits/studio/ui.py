@@ -705,7 +705,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
           <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
           <button class="btn-secondary" id="pfDownloadAllBtn" onclick="pfDownloadAllGraphs()" disabled
-            title="Saves every graph to your Downloads as one zip named after the run">Download all</button>
+            title="Saves every graph into one folder in your Downloads, named after the run">Download all</button>
           <button class="btn-danger" onclick="pfDeleteRun('pfRunPick')">Delete run</button>
         </div>
       </div>
@@ -1213,8 +1213,9 @@ async function triggerDownloads(urls){
   }
 }
 // Download-all: regenerate the graphs so they're current, then download each
-// PNG separately - no zip, the plots land in Downloads as plain image files.
-// (The paper-folding side zips instead, see pfDownloadAllGraphs.)
+// PNG separately - the plots land in Downloads as plain image files, named
+// after their run. (The paper-folding side collects them into one folder
+// instead, see pfDownloadAllGraphs.)
 async function downloadAllGraphs(){
   const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1604,11 +1605,13 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
-// Regenerate so the graphs are current, then download the whole set as ONE
-// file: /api/paperfold/plots.zip serves a zip whose single top-level folder is
-// named after the run, so the user gets <run name>/ holding every graph
-// instead of a pile of loose PNGs in Downloads (and no "allow multiple
-// downloads?" prompt, since it's a single download).
+// "Download all" leaves ONE folder in Downloads, named after the run, with
+// every graph inside it - not a pile of loose PNGs and not a zip. Regenerate
+// so the graphs are current, then ask the server to write that folder:
+// browsers can't create one (the <a download> attribute ignores any path in
+// its value), but the Studio server runs on this same machine, so it can.
+// Colab is the exception - the kernel is a remote VM there - and answers with
+// fallback:true, which drops back to downloading each PNG on its own.
 async function pfDownloadAllGraphs(){
   const name=$('pfRunPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1619,8 +1622,12 @@ async function pfDownloadAllGraphs(){
     if(!r.ok){toast('Error: '+r.error,'err');return;}
     await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun();
     if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
-    toast(`Downloading ${r.plots.length} graphs as ${name}.zip…`,'ok');
-    await triggerDownloads(['/api/paperfold/plots.zip?run='+encodeURIComponent(name)]);
+    const s=await api('/api/paperfold/plots/save','POST',{run:name});
+    if(s.ok){toast(`Saved ${s.count} graphs to ${s.short}`,'ok');return;}
+    if(!s.fallback){toast('Error: '+s.error,'err');return;}
+    toast(`Downloading ${r.plots.length} graphs…`,'ok');
+    await triggerDownloads(r.plots.map(f=>
+      '/api/paperfold/plot?run='+encodeURIComponent(name)+'&file='+encodeURIComponent(f)+'&download=1'));
   } finally {
     btn.disabled=!$('pfRunPick').value;
   }
