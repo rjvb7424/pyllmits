@@ -28,6 +28,7 @@ import re
 import shutil
 import sys
 import threading
+import zipfile
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -607,6 +608,15 @@ class Handler(BaseHTTPRequestHandler):
                     dl = q["file"][0] if q.get("download") else None
                     return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
+            if p == "/api/paperfold/plots.zip":
+                run_dir = self._paperfold_run_dir(q.get("run", [""])[0])
+                if run_dir is None:
+                    return self._send(400, {"error": "invalid run name"})
+                blob = self._paperfold_plots_zip(run_dir)
+                if blob is None:
+                    return self._send(404, {"error": "no plots for this run"})
+                return self._send(200, blob, "application/zip",
+                                  download_name=f"{run_dir.name}.zip")
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -961,6 +971,27 @@ class Handler(BaseHTTPRequestHandler):
                                for n, r in models.items()],
                 })
         return out
+
+    @staticmethod
+    def _paperfold_plots_zip(run_dir: Path) -> bytes | None:
+        """Every plot PNG of a run, packed into one in-memory zip. Returns None
+        when the run has no plots yet.
+
+        Each entry is stored under a single top-level directory named after the
+        run, so unzipping produces one folder holding all the graphs rather
+        than scattering loose PNGs wherever the archive was opened. Run names
+        are already restricted to EXPERIMENT_NAME_RE, so the folder name needs
+        no further escaping and matches the .zip's own file name.
+        """
+        plots = run_dir / "plots"
+        files = sorted(plots.glob("*.png")) if plots.exists() else []
+        if not files:
+            return None
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                zf.write(f, arcname=f"{run_dir.name}/{f.name}")
+        return buf.getvalue()
 
     def _delete_paperfold_run(self, run_name: str) -> tuple[int, dict]:
         """Delete a paper-folding run's whole folder (results.json/plots)."""

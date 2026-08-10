@@ -705,7 +705,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           <select id="pfRunPick" onchange="pfShowRun()" style="width:220px;text-overflow:ellipsis" aria-label="Pick a paper-folding run"></select>
           <button class="btn-primary" onclick="pfRegenGraphs()">&#8635;&nbsp;Regenerate graphs</button>
           <button class="btn-secondary" id="pfDownloadAllBtn" onclick="pfDownloadAllGraphs()" disabled
-            title="Saves every graph as a PNG into a new folder in your Downloads">Download all</button>
+            title="Saves every graph to your Downloads as one zip named after the run">Download all</button>
           <button class="btn-danger" onclick="pfDeleteRun('pfRunPick')">Delete run</button>
         </div>
       </div>
@@ -1200,11 +1200,10 @@ async function regenGraphs(){const name=$('runPick').value;
   toast('Regenerating\u2026');const r=await api('/api/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await loadRuns(); $('runPick').value=name; showRun(); toast('Graphs regenerated','ok');}
-// Download-all: regenerate the graphs so they're current, then download
-// each PNG as its own normal browser download (a temporary <a> click per
-// file, staggered so the browser registers every one). No zip - the plots
-// land in Downloads as plain image files, named after their run. On the
-// first use the browser may ask permission to download multiple files.
+// Saves each URL through the browser's own download machinery: a temporary
+// <a> click per file, staggered so the browser registers every one. With more
+// than one URL the browser may, on first use, ask permission to download
+// multiple files.
 async function triggerDownloads(urls){
   for(const u of urls){
     const a=document.createElement('a');
@@ -1213,6 +1212,9 @@ async function triggerDownloads(urls){
     await new Promise(res=>setTimeout(res,300));
   }
 }
+// Download-all: regenerate the graphs so they're current, then download each
+// PNG separately - no zip, the plots land in Downloads as plain image files.
+// (The paper-folding side zips instead, see pfDownloadAllGraphs.)
 async function downloadAllGraphs(){
   const name=$('runPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1602,9 +1604,11 @@ async function pfRegenGraphs(){const name=$('pfRunPick').value;
   toast('Regenerating…');const r=await api('/api/paperfold/analyze','POST',{run:name});
   if(!r.ok){toast('Error: '+r.error,'err');return;}
   await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun(); toast('Graphs regenerated','ok');}
-// Same flow as Crafter's downloadAllGraphs(): regenerate so the graphs are
-// current, then download each PNG individually through the browser's own
-// download machinery.
+// Regenerate so the graphs are current, then download the whole set as ONE
+// file: /api/paperfold/plots.zip serves a zip whose single top-level folder is
+// named after the run, so the user gets <run name>/ holding every graph
+// instead of a pile of loose PNGs in Downloads (and no "allow multiple
+// downloads?" prompt, since it's a single download).
 async function pfDownloadAllGraphs(){
   const name=$('pfRunPick').value;
   if(!name){toast('Pick a run first','err');return;}
@@ -1615,9 +1619,8 @@ async function pfDownloadAllGraphs(){
     if(!r.ok){toast('Error: '+r.error,'err');return;}
     await pfLoadRuns(); $('pfRunPick').value=name; pfShowRun();
     if(!r.plots||!r.plots.length){toast('No graphs to download','err');return;}
-    toast(`Downloading ${r.plots.length} graphs…`,'ok');
-    await triggerDownloads(r.plots.map(f=>
-      '/api/paperfold/plot?run='+encodeURIComponent(name)+'&file='+encodeURIComponent(f)+'&download=1'));
+    toast(`Downloading ${r.plots.length} graphs as ${name}.zip…`,'ok');
+    await triggerDownloads(['/api/paperfold/plots.zip?run='+encodeURIComponent(name)]);
   } finally {
     btn.disabled=!$('pfRunPick').value;
   }
