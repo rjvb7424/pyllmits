@@ -13,4 +13,4 @@ organised by concern:
     llmits.paperfold   the independent paper-folding spatial-reasoning benchmark
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
