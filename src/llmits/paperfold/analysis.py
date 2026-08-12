@@ -22,6 +22,8 @@ Plots are written to <run_dir>/plots/ as <kind>_of_<name>.png, matching the
 naming convention llmits.analysis.plots (Crafter's) already uses:
   * letter_distribution_of_<name>.png   - predicted vs correct answer letter
   * accuracy_by_folds_of_<name>.png     - accuracy vs number of folds
+                                          (only for runs that swept more than
+                                          one fold count)
   * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst
   * accuracy_vs_tokens_of_<name>.png    - accuracy vs average token spend
   * accuracy_vs_time_of_<name>.png      - accuracy vs average response time
@@ -65,6 +67,16 @@ SHADE_RANGE = (0.35, 0.85)
 PLOT_KINDS = ("letter_distribution", "accuracy_by_folds", "accuracy_by_model",
               "accuracy_vs_tokens", "accuracy_vs_time", "elapsed_time_by_model",
               "tokens_by_model")
+
+# Lines that land on the same accuracy (several models all at 100%, say) would
+# be drawn exactly on top of each other and only the last one painted would be
+# visible. Each hidden line gets a constant vertical nudge instead: small
+# enough that the curve still reads as its true accuracy, big enough to see.
+OVERLAP_NUDGE = 2.5      # percentage points between two lines nudged apart
+OVERLAP_EPSILON = 2.0    # closer than this at a shared fold count = overlapping
+# Cycled per model so tied lines are told apart by marker shape too, not just
+# by the nudge - useful for anyone reading the graph in black and white.
+MARKERS = ("o", "s", "^", "D", "v", "P", "X", "*")
 
 
 def plot_filename(kind: str, name_slug: str) -> str:
@@ -187,6 +199,59 @@ def plot_letter_distribution(rows, out: Path, experiment_name: str) -> None:
     _finish(fig, ax, out, rotate_xticks=False)
 
 
+def fold_values(rows) -> list[int]:
+    """Every fold count the run recorded trials at, sorted."""
+    return sorted({int(r["num_folds"]) for r in rows if r.get("num_folds") is not None})
+
+
+def sweeps_fold_counts(rows) -> bool:
+    """Whether the run actually varied how many times the paper was folded.
+
+    The accuracy-by-folds curve is a difficulty curve - it only says anything
+    when the difficulty moved. At a single fold count every "line" is one dot
+    and accuracy_by_model shows the same numbers more clearly, so
+    build_all_plots skips the plot entirely in that case.
+    """
+    return len(fold_values(rows)) > 1
+
+
+def _curve_overlaps(a: dict[int, float], b: dict[int, float]) -> bool:
+    """True when two accuracy curves sit close enough at some shared fold
+    count that drawing both would hide one under the other."""
+    return any(abs(a[f] - b[f]) < OVERLAP_EPSILON for f in a.keys() & b.keys())
+
+
+def _nudge_offset(level: int) -> float:
+    """Vertical shift for a nudge level, alternating above/below the true
+    value (0, +1, -1, +2, -2, ...) so a stack of tied models stays centred
+    on the accuracy they share."""
+    step = (level + 1) // 2
+    return step * OVERLAP_NUDGE * (1 if level % 2 else -1)
+
+
+def _nudge_offsets(curves: list[tuple[str, dict[int, float]]]) -> dict[str, float]:
+    """How far to shift each model's line so none of them disappears beneath
+    another. Assigned greedily in draw order: a curve keeps its true accuracy
+    (no shift) unless it would collide with a line already placed, in which
+    case it steps to the nearest free slot above or below. Collisions are
+    checked against the placed lines' *shifted* positions, so nudging a line
+    clear of one neighbour never drops it onto another.
+    """
+    offsets: dict[str, float] = {}
+    placed: list[dict[int, float]] = []
+    for model, curve in curves:
+        level = 0
+        while True:
+            offset = _nudge_offset(level)
+            shifted = {f: y + offset for f, y in curve.items()}
+            if not any(_curve_overlaps(shifted, other) for other in placed):
+                break
+            level += 1
+        offsets[model] = offset
+        placed.append(shifted)
+    return offsets
+
+
 def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
     """Accuracy against how many times the paper was folded - the difficulty
     curve, one line per model.
@@ -198,8 +263,10 @@ def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
     chance line from the start.
 
     Trials are grouped by their own recorded "num_folds", so this works
-    whatever the run swept - and a run that only ever used one fold count
-    simply plots one point per model.
+    whatever the run swept. Models that tie on accuracy (a whole field sitting
+    at 100%, say) would otherwise draw one line on top of another and leave
+    only the last-painted model visible, so tied lines are nudged a couple of
+    percentage points apart and the subtitle says so.
     """
     by_model: dict[str, dict[int, list[int]]] = {}
     for r in rows:
@@ -209,11 +276,11 @@ def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
         m = r.get("model_version", "unknown")
         by_model.setdefault(m, {}).setdefault(int(folds), []).append(1 if r["is_correct"] else 0)
 
-    fold_values = sorted({f for per_folds in by_model.values() for f in per_folds})
+    folds_seen = fold_values(rows)
     colors = model_color_map(rows)
 
     fig, ax = plt.subplots(figsize=(10, 6.5))
-    if not fold_values:
+    if not folds_seen:
         ax.text(0.5, 0.5, "No trials with a recorded fold count yet",
                 ha="center", va="center", transform=ax.transAxes,
                 fontsize=11, color=LABEL_GRAY)
@@ -228,16 +295,22 @@ def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
         flags = [f for per_folds in by_model[model].values() for f in per_folds]
         return sum(flags) / len(flags)
 
-    for model in sorted(by_model, key=overall):
-        per_folds = by_model[model]
-        xs = [f for f in fold_values if f in per_folds]
-        ys = [100 * sum(per_folds[f]) / len(per_folds[f]) for f in xs]
-        ax.plot(xs, ys, marker="o", markersize=5, linewidth=1.8,
+    curves = [(model, {f: 100 * sum(flags) / len(flags)
+                       for f, flags in by_model[model].items()})
+              for model in sorted(by_model, key=overall)]
+    offsets = _nudge_offsets(curves)
+
+    drawn: list[float] = []
+    for i, (model, curve) in enumerate(curves):
+        xs = [f for f in folds_seen if f in curve]
+        ys = [curve[f] + offsets[model] for f in xs]
+        drawn.extend(ys)
+        ax.plot(xs, ys, marker=MARKERS[i % len(MARKERS)], markersize=5, linewidth=1.8,
                 color=colors[model], label=model, alpha=0.9, zorder=3)
 
     ax.axhline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
-    ax.set_xticks(fold_values)
-    ax.set_xticklabels([str(f) for f in fold_values])
+    ax.set_xticks(folds_seen)
+    ax.set_xticklabels([str(f) for f in folds_seen])
     ax.set_xlabel("Number of folds (how many times the paper was folded)",
                   color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
@@ -245,13 +318,18 @@ def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
                  fontsize=13, pad=28)
     # Paper size is derived from the fold count, so say what the sheet grew
     # to across the x axis - it's the other thing that changed along it, and
-    # it's why the prompts get longer toward the right.
-    ax.annotate(f"Trials per point: {_trials_per_point(by_model, fold_values)}  |  "
-                f"{_paper_size_summary(rows, fold_values)}",
+    # it's why the prompts get longer toward the right. The nudge note only
+    # appears when a line actually moved, so a graph with no ties doesn't
+    # invite doubt about numbers that are exactly where they look.
+    nudged = ("  |  tied lines nudged apart to stay visible, centred on the accuracy they share"
+              if any(offsets.values()) else "")
+    ax.annotate(f"Trials per point: {_trials_per_point(by_model, folds_seen)}  |  "
+                f"{_paper_size_summary(rows, folds_seen)}{nudged}",
                 xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
                 textcoords="offset points", ha="center", va="bottom",
                 fontsize=9, color=LABEL_GRAY)
-    ax.set_ylim(-5, 110)
+    # Keep the usual 0-100 framing, widened only if a nudge pushed a line past it.
+    ax.set_ylim(min(-5, min(drawn) - 3), max(110, max(drawn) + 3))
     ax.margins(x=0.06)
     ax.grid(True, alpha=0.3)
     # Outside the axes on the right: a run can hold a dozen-plus models, and an
@@ -261,12 +339,12 @@ def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
     _finish(fig, ax, out, rotate_xticks=False)
 
 
-def _trials_per_point(by_model: dict, fold_values: list[int]) -> str:
+def _trials_per_point(by_model: dict, folds_seen: list[int]) -> str:
     """How many trials each point averages over - one number when every model
     ran the same amount at every fold count, a range when they differ (a run
     stopped partway, or a model added late)."""
     counts = {len(per_folds[f]) for per_folds in by_model.values()
-              for f in fold_values if f in per_folds}
+              for f in folds_seen if f in per_folds}
     if len(counts) == 1:
         return str(counts.pop())
     return f"{min(counts)}-{max(counts)}"
@@ -287,13 +365,13 @@ def _paper_size_label(rows, folds: int) -> str:
     return f"{width}x{height}"
 
 
-def _paper_size_summary(rows, fold_values: list[int]) -> str:
+def _paper_size_summary(rows, folds_seen: list[int]) -> str:
     """How the paper grew across the x axis, in one short phrase - listing
     every fold count separately gets unreadable past a few of them."""
-    first, last = _paper_size_label(rows, fold_values[0]), _paper_size_label(rows, fold_values[-1])
-    if len(fold_values) == 1 or first == last:
+    first, last = _paper_size_label(rows, folds_seen[0]), _paper_size_label(rows, folds_seen[-1])
+    if len(folds_seen) == 1 or first == last:
         return f"paper {first}"
-    return f"paper {first} at {fold_values[0]} folds, up to {last} at {fold_values[-1]}"
+    return f"paper {first} at {folds_seen[0]} folds, up to {last} at {folds_seen[-1]}"
 
 
 def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
@@ -470,7 +548,16 @@ def build_all_plots(rows, plots_dir: Path, slug: str) -> None:
     }
     plots_dir.mkdir(parents=True, exist_ok=True)
     for kind in PLOT_KINDS:
-        plotters[kind](rows, plots_dir / plot_filename(kind, slug), slug)
+        out = plots_dir / plot_filename(kind, slug)
+        # The difficulty curve needs a difficulty that moved: with a single
+        # fold count it's one dot per model, which accuracy_by_model already
+        # says better. Drop any copy left from an earlier build too - a run
+        # re-analysed after its fold sweep was narrowed shouldn't keep showing
+        # the old curve in the Studio's graphs tab.
+        if kind == "accuracy_by_folds" and not sweeps_fold_counts(rows):
+            out.unlink(missing_ok=True)
+            continue
+        plotters[kind](rows, out, slug)
     # Superseded plot kinds (e.g. the old combined accuracy_vs_cost panel) -
     # remove stale copies so they don't linger in the Studio's graphs tab.
     for stale_kind in ("accuracy_vs_cost",):
