@@ -131,7 +131,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .status-dot.paused{background:var(--accent)}
   .status-dot.finished{background:var(--ok)}
   .status-dot.stopped{background:var(--danger);animation:statusPulse 1.4s infinite;--pulse-rgb:224,86,86}
-  .status-dot.cancelled{background:var(--danger)}
   .status-dot.error{background:var(--danger);animation:statusPulse 1.4s infinite;--pulse-rgb:224,86,86}
   @keyframes statusPulse{
     0%{box-shadow:0 0 0 0 rgba(var(--pulse-rgb),.55)}
@@ -562,12 +561,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div><h2>Run</h2><div class="sub">Launch a config and watch it live.</div></div>
       <div class="flex">
         <select id="runConfigPick" onchange="pickRunConfig(this.value)" style="width:260px;text-overflow:ellipsis" aria-label="Config to run"></select>
-        <button class="btn-primary" onclick="runGo()">&#9654;&nbsp;Go</button>
-        <button class="btn-secondary" onclick="runPause()">&#10073;&#10073;&nbsp;Pause</button>
-        <button class="btn-secondary" onclick="runResume()">&#9654;&nbsp;Resume</button>
-        <button class="btn-secondary" onclick="runRestart()">&#8635;&nbsp;Restart</button>
-        <button class="btn-danger" onclick="runStop()">&#9632;&nbsp;Stop</button>
-        <button class="btn-ghost" onclick="runCancel()">Cancel</button>
+        <button class="btn-primary" id="runStartBtn" onclick="runStart()">&#9654;&nbsp;Start</button>
+        <button class="btn-secondary" id="runPauseBtn" onclick="runPause()">&#10073;&#10073;&nbsp;Pause</button>
+        <button class="btn-danger" id="runStopBtn" onclick="runStop()">&#9632;&nbsp;Stop</button>
       </div>
     </div>
     <div class="live-grid">
@@ -680,10 +676,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
     <div class="card"><h3>Run</h3>
       <div class="flex" style="margin-bottom:var(--s4)">
-        <button class="btn-primary" onclick="pfRunGo()">&#9654;&nbsp;Start</button>
-        <button class="btn-secondary" onclick="pfRunPause()">&#10073;&#10073;&nbsp;Pause</button>
-        <button class="btn-secondary" onclick="pfRunResume()">&#9654;&nbsp;Resume</button>
-        <button class="btn-danger" onclick="pfRunStop()">&#9632;&nbsp;Stop</button>
+        <button class="btn-primary" id="pfStartBtn" onclick="pfRunStart()">&#9654;&nbsp;Start</button>
+        <button class="btn-secondary" id="pfPauseBtn" onclick="pfRunPause()">&#10073;&#10073;&nbsp;Pause</button>
+        <button class="btn-danger" id="pfStopBtn" onclick="pfRunStop()">&#9632;&nbsp;Stop</button>
       </div>
       <div class="live-chips">
         <div class="chip"><div class="k">State</div><div class="v" id="pfState">idle</div></div>
@@ -1070,7 +1065,7 @@ async function saveConfig(){cfgFromForm();const name=(CFG.experiment.name||'').t
 // at, so status belongs where it's always visible, and the live view is
 // native markup (always rendered, filled with placeholders when idle)
 // instead of an iframe that's blank until a run starts.
-let RUNPATH=null, lastRunState=null, runCancelled=false, lvFrameKey=null;
+let RUNPATH=null, lastRunState=null, lvFrameKey=null;
 async function loadRunConfigs(){const r=await api('/api/configs');
   const sel=$('runConfigPick');
   sel.innerHTML='<option value="">-- select a config --</option>'+
@@ -1078,28 +1073,40 @@ async function loadRunConfigs(){const r=await api('/api/configs');
 }
 function pickRunConfig(path){RUNPATH=path||null;}
 function selectRun(path){RUNPATH=path;go('run');}
-async function runGo(){if(!RUNPATH){toast('Pick a config to run first','err');return;}
+// Three buttons, no more: Start, Pause, Stop. Start doubles as Resume - a
+// paused run continues from exactly where it stopped instead of starting the
+// config over, which is what pressing "play" on a paused thing should do.
+// syncRunButtons() keeps the trio honest about which one is live right now.
+async function runStart(){
+  if((LAST_CRAFTER_STATUS.state||'idle')=='paused'){
+    await api('/api/run/resume','POST');toast('Continuing','ok');return;}
+  if(!RUNPATH){toast('Pick a config to run first','err');return;}
   const r=await api('/api/run/start','POST',{path:RUNPATH});
   if(!r.ok){toast(r.error,'err');return;}
-  runCancelled=false;
   toast('Experiment started','ok');}
-function runPause(){api('/api/run/pause','POST');}
-function runResume(){api('/api/run/resume','POST');}
+function runPause(){api('/api/run/pause','POST');toast('Paused \u2014 press Start to continue','ok');}
 function runStop(){api('/api/run/stop','POST');toast('Stopping\u2026');}
-async function runRestart(){await api('/api/run/stop','POST');
-  let tries=0;const wait=setInterval(async()=>{const s=await api('/api/run/status');
-    if(!s.running||++tries>15){clearInterval(wait);runGo();}},600);}
-async function runCancel(){await api('/api/run/stop','POST');
-  runCancelled=true;go('configs');}
+
+// Start is meaningless while a run is going, Pause only applies to a running
+// one, and Stop needs something to stop - so each button says so rather than
+// firing a request the server will just refuse. Start says "Continue" while
+// paused, so the doubled-up behaviour is visible before you press it.
+function syncRunButtons(ids,s){
+  const st=s.state||'idle', paused=st=='paused', stopping=st=='stopping';
+  const start=$(ids.start);
+  start.innerHTML=paused?'&#9654;&nbsp;Continue':'&#9654;&nbsp;Start';
+  start.disabled=!!s.running&&!paused;
+  $(ids.pause).disabled=!(st=='running'&&s.running);
+  $(ids.stop).disabled=!s.running||stopping;
+}
 
 // ---------- Header status dot (reflects Crafter AND Paper Folding - whichever
 // is more "active" drives the dot's colour/label; the detail line shows both
 // at once if both happen to be running/paused, since they're fully
 // independent and can be going simultaneously) ----------
 let LAST_CRAFTER_STATUS={state:'idle'}, LAST_PAPERFOLD_STATUS={state:'idle'};
-const STATUS_RANK={running:0,stopping:0,paused:1,error:2,cancelled:2,stopped:3,finished:4,idle:5};
-function oneStatusMeta(s,cancelled){
-  if(cancelled)return{cls:'cancelled',label:'cancelled'};
+const STATUS_RANK={running:0,stopping:0,paused:1,error:2,stopped:3,finished:4,idle:5};
+function oneStatusMeta(s){
   const st=s.state||'idle';
   if(['running','paused','stopped','finished','error'].includes(st))return{cls:st,label:st};
   return{cls:'idle',label:'idle'};
@@ -1112,7 +1119,7 @@ function pfHdrDetail(s){
 }
 function updateStatusDot(){
   const c=LAST_CRAFTER_STATUS, p=LAST_PAPERFOLD_STATUS;
-  const cMeta=oneStatusMeta(c,runCancelled), pMeta=oneStatusMeta(p,false);
+  const cMeta=oneStatusMeta(c), pMeta=oneStatusMeta(p);
   const craftLeads=(STATUS_RANK[cMeta.cls]??5)<=(STATUS_RANK[pMeta.cls]??5);
   const meta=craftLeads?cMeta:pMeta;
 
@@ -1167,6 +1174,7 @@ async function pollRunStatus(){
   LAST_CRAFTER_STATUS=s;
   updateStatusDot();
   updateLiveView(s);
+  syncRunButtons({start:'runStartBtn',pause:'runPauseBtn',stop:'runStopBtn'},s);
   if(['finished','stopped','error'].includes(s.state)&&!s.running&&lastRunState!==s.state){
     if(s.state=='finished'){toast('Run finished \u2014 generating graphs\u2026','ok');
       if(s.run_name)analyzeAfterRun(s.run_name);}}
@@ -1512,7 +1520,12 @@ async function pfAfterSaved(body){
   pfRenderModels();
   pfUpdateNameHint();
 }
-async function pfRunGo(){
+// Start doubles as Resume here too: while paused it continues the run in
+// flight rather than re-reading the Setup form, so edits made to the form
+// mid-pause can't quietly restart the run under a different setup.
+async function pfRunStart(){
+  if((LAST_PAPERFOLD_STATUS.state||'idle')=='paused'){
+    await api('/api/paperfold/run/resume','POST');toast('Continuing','ok');return;}
   const {body,error}=pfBuildRunBody();
   if(error){toast(error,'err');return;}
   const r=await api('/api/paperfold/run/start','POST',body);
@@ -1520,8 +1533,7 @@ async function pfRunGo(){
   toast('Paper-folding run started','ok');
   await pfAfterSaved(body);
 }
-function pfRunPause(){api('/api/paperfold/run/pause','POST');}
-function pfRunResume(){api('/api/paperfold/run/resume','POST');}
+function pfRunPause(){api('/api/paperfold/run/pause','POST');toast('Paused — press Start to continue','ok');}
 function pfRunStop(){api('/api/paperfold/run/stop','POST');toast('Stopping…');}
 // Writes the current Setup form to disk - no models built, no API calls - so
 // a model list/config can be reserved and come back exactly as left, and so
@@ -1608,6 +1620,7 @@ async function pfPollStatus(){
   LAST_PAPERFOLD_STATUS=s;
   updateStatusDot();
   pfUpdateStatus(s);
+  syncRunButtons({start:'pfStartBtn',pause:'pfPauseBtn',stop:'pfStopBtn'},s);
   if(['finished','stopped','error'].includes(s.state)&&!s.running&&pfLastState!==s.state){
     if(s.state=='finished'){toast('Paper-folding run finished — generating graphs…','ok');
       if(s.run_name)pfAnalyzeAfterRun(s.run_name);}

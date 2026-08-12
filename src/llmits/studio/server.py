@@ -10,7 +10,8 @@ opens a UI where you can:
   * edit every setting (trials, turns, models, objective, prompt, ...) as a form
   * build the world by painting tiles on a grid (water, trees, stone, table,
     player start, zombies, ...)
-  * launch an experiment with Play / Pause / Resume / Stop, and watch it live
+  * launch an experiment with Start / Pause / Stop (Start doubles as Resume
+    while paused), and watch it live
   * view the result graphs for any run
 
 It is a small stdlib http.server (no extra dependencies) that serves a
@@ -693,11 +694,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self._regen_graphs(self._body()["run"]))
             if p == "/api/run/start":
                 return self._send(200, STUDIO.start_run(self._body()["path"]))
+            # Only a live run can be paused or resumed: the control object
+            # outlives the thread that used it, so pausing a finished run would
+            # otherwise relabel it "paused" forever with nothing left to resume.
             if p == "/api/run/pause":
-                if STUDIO.control: STUDIO.control.pause()
+                if STUDIO.control and STUDIO.is_running(): STUDIO.control.pause()
                 return self._send(200, {"ok": True})
             if p == "/api/run/resume":
-                if STUDIO.control: STUDIO.control.resume()
+                if STUDIO.control and STUDIO.is_running(): STUDIO.control.resume()
                 return self._send(200, {"ok": True})
             if p == "/api/run/stop":
                 STUDIO.stop_run()
@@ -726,10 +730,10 @@ class Handler(BaseHTTPRequestHandler):
                     b.get("direction_mode", "real"), b.get("direction_labels"),
                     b.get("old_name"), lo, hi))
             if p == "/api/paperfold/run/pause":
-                if PAPERFOLD.control: PAPERFOLD.control.pause()
+                if PAPERFOLD.control and PAPERFOLD.is_running(): PAPERFOLD.control.pause()
                 return self._send(200, {"ok": True})
             if p == "/api/paperfold/run/resume":
-                if PAPERFOLD.control: PAPERFOLD.control.resume()
+                if PAPERFOLD.control and PAPERFOLD.is_running(): PAPERFOLD.control.resume()
                 return self._send(200, {"ok": True})
             if p == "/api/paperfold/run/stop":
                 PAPERFOLD.stop_run()

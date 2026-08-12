@@ -62,4 +62,17 @@ class RunControl:
             raise StopExperiment()
 
     def update(self, **kw):
+        """Merge a runner's progress into `status`.
+
+        The switch - not the runner - is the authority on whether a run is
+        paused. A runner reports state="running" with every turn/trial it
+        finishes, and Pause almost always lands mid-turn, so without this the
+        next update would paper straight over the pause: the UI would show a
+        "running" run that never advances (it's blocked at the next
+        checkpoint), and anything keyed off that state - like a Start button
+        that doubles as Continue - would have no way to tell it's paused.
+        Progress fields still come through; only the state label is held.
+        """
+        if self.paused:
+            kw.pop("state", None)
         self.status.update(kw)
