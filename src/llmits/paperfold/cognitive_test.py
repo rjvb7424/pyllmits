@@ -5,7 +5,16 @@ paperfold/cognitive_test.py
 The paper-folding spatial-reasoning puzzle itself: fold a square grid, punch a
 hole through the folded layers, and ask a solver to pick which of five
 candidates matches the paper once fully unfolded. Ported from the original
-standalone prototype - the puzzle generation and grading logic is unchanged.
+standalone prototype; the grading logic and the fold/unfold grid math are
+unchanged, and two things about how a puzzle is *generated* have moved on:
+
+  * the paper is sized from the fold count (paper_size_for_folds) instead of
+    always being 16x16, so more folds means a bigger sheet and the last folds
+    always have paper left to halve - at 3 folds it still works out to the
+    original 16x16;
+  * fold directions are drawn balanced across the two axes
+    (balanced_fold_plan) rather than uniformly at random, which is what keeps
+    that sizing rule modest and every trial at a given fold count comparable.
 
 ``CognitiveTest.run()`` takes any ``solver(prompt: str) -> dict | None``
 callable, so it has no idea which AI provider (or whether an AI at all)
@@ -30,11 +39,72 @@ DEFAULT_LABEL_POOL = (
     "pink", "teal", "gold", "silver", "indigo", "crimson",
 )
 
+# The smallest side the *folded* paper is ever allowed to end up with. One
+# trial needs six distinct punch positions on the folded face (five candidates
+# plus the real answer, all different, so no two choices can look alike), and
+# every fold halves a side - so the paper has to start big enough that what's
+# left after the last fold is still a real grid. At 4 there are at least 4x4 =
+# 16 positions to draw those six from.
+MIN_FOLDED_SIDE = 4
+
 
 def random_direction_labels(pool=DEFAULT_LABEL_POOL):
     """A fresh random {direction: placeholder} mapping, one word per
     direction, no word reused."""
     return dict(zip(DIRECTIONS, random.sample(pool, len(DIRECTIONS))))
+
+
+def folds_per_axis(num_folds: int) -> tuple[int, int]:
+    """How ``num_folds`` folds are split between the two axes, as evenly as
+    possible: (folds on the busier axis, folds on the other one)."""
+    fewer = int(num_folds) // 2
+    return int(num_folds) - fewer, fewer
+
+
+def paper_size_for_folds(num_folds: int, min_folded_side: int = MIN_FOLDED_SIDE) -> tuple[int, int]:
+    """The (width, height) a square paper must start at to survive
+    ``num_folds`` folds - the answer to "how big does the paper have to be?".
+
+    A fold halves one side, so a side taking k folds has to start at
+    ``min_folded_side * 2**k``. balanced_fold_plan() never puts more than
+    ceil(num_folds / 2) folds on the same axis, so that is the exponent the
+    square is cut to:
+
+        folds:  0    1    2    3      4      5      6      7      8
+        paper:  4x4  8x8  8x8  16x16  16x16  32x32  32x32  64x64  64x64
+
+    A 2-fold puzzle therefore gets a much smaller sheet than a 5-fold one,
+    and 3 folds lands on 16x16 - exactly the fixed size this test used before
+    paper size was derived from the fold count, so 3-fold runs are unchanged.
+    """
+    per_axis = folds_per_axis(num_folds)[0]
+    side = int(min_folded_side) * 2 ** per_axis
+    return side, side
+
+
+def balanced_fold_plan(num_folds: int) -> list[str]:
+    """A random fold sequence whose folds are split as evenly as possible
+    between the vertical (north/south) and horizontal (east/west) axes.
+
+    Folding only shrinks the axis it is applied to, so an unconstrained
+    sequence has to be sized for its worst case - every fold landing on the
+    same axis - which doubles the paper, and with it the prompt, for each
+    extra fold. Balancing the axes means the paper only doubles every
+    *second* fold, and it also means every trial at a given fold count is
+    handed the same square sheet: an accuracy-vs-folds comparison isn't
+    confounded by some trials getting a 4x128 strip and others a 32x32
+    square.
+
+    Which axis takes the extra fold when ``num_folds`` is odd is itself
+    random, so neither axis is systematically folded more often.
+    """
+    busier, other = folds_per_axis(num_folds)
+    axes = [("north", "south"), ("east", "west")]
+    random.shuffle(axes)
+    plan = [random.choice(axes[0]) for _ in range(busier)]
+    plan += [random.choice(axes[1]) for _ in range(other)]
+    random.shuffle(plan)
+    return plan
 
 
 class Paper:
@@ -61,10 +131,29 @@ class Paper:
         """Render the current face as a plain string grid."""
         return "\n".join(" ".join(str(c) for c in row) for row in self.face)
 
+    def can_fold(self, orientation="north") -> bool:
+        """Whether there is still enough paper left to fold this way - i.e.
+        whether the side this fold halves is an even number of cells."""
+        side = self.current_height if orientation in ("north", "south") else self.current_width
+        return side >= 2 and side % 2 == 0
+
     def fold(self, orientation="north"):
         """Fold the paper in the given orientation."""
         if orientation not in DIRECTIONS:
             raise ValueError(f"Unknown fold orientation: {orientation!r}")
+        if not self.can_fold(orientation):
+            # Without this the paper silently folded itself out of existence:
+            # a side of 1 halves to 0 (integer division), leaving an empty
+            # face with nowhere to punch a hole. Size the paper up front with
+            # paper_size_for_folds(num_folds) instead of folding past what it
+            # can take.
+            side = self.current_height if orientation in ("north", "south") else self.current_width
+            raise ValueError(
+                f"Paper is too small to fold {orientation}: that side is {side} "
+                f"cell(s) ({self.current_width}x{self.current_height} after "
+                f"{len(self.fold_history)} fold(s)). Start from a bigger sheet - "
+                f"see paper_size_for_folds()."
+            )
         # Halve the current dimensions based on the fold orientation
         if orientation in ("north", "south"):
             self.current_height //= 2
@@ -111,9 +200,18 @@ class Paper:
 
 class CognitiveTest:
     """Class representing a cognitive test involving folding and punching paper."""
-    def __init__(self, width=16, height=16, direction_labels=None):
-        # Initialize the test with a Paper instance
-        self.test_paper = Paper(width, height)
+    def __init__(self, num_folds=3, width=None, height=None, direction_labels=None):
+        # How many folds this puzzle is built for. The paper is sized from it
+        # (rather than being a fixed 16x16 for every difficulty): a 5-fold
+        # puzzle needs a far bigger sheet than a 2-fold one, or the last folds
+        # would have nothing left to halve. width/height override it only for
+        # callers that really want a specific sheet - fold() refuses anyway
+        # once a paper runs out of room, so an undersized override fails loudly
+        # instead of producing a broken puzzle.
+        self.num_folds = int(num_folds)
+        default_width, default_height = paper_size_for_folds(self.num_folds)
+        self.test_paper = Paper(default_width if width is None else width,
+                                default_height if height is None else height)
         self.choices = {"A": None, "B": None, "C": None, "D": None, "E": None}
         # Track the sequence of fold orientations applied to the test paper
         # This is done seperately because paper.unfold() will pop the fold history
@@ -138,10 +236,13 @@ class CognitiveTest:
         self.test_paper.fold(orientation)
         self.fold_orientations.append(orientation)
 
-    def fold_random(self, num_folds=3):
-        """Fold the test paper n times in random orientations."""
-        for _ in range(num_folds):
-            orientation = random.choice(DIRECTIONS)
+    def fold_random(self, num_folds=None):
+        """Fold the test paper n times in random orientations, spread across
+        both axes so the sheet paper_size_for_folds() picked is guaranteed to
+        take all of them (see balanced_fold_plan)."""
+        if num_folds is None:
+            num_folds = self.num_folds
+        for orientation in balanced_fold_plan(num_folds):
             self.fold(orientation)
 
     def generate_choices(self):
@@ -260,10 +361,16 @@ class CognitiveTest:
         # Return the last match found, as it is likely to be the final answer.
         return matches[-1] if matches else None
 
-    def run(self, num_folds=3, solver=None):
+    def run(self, num_folds=None, solver=None):
         """Run a single trial of the cognitive test, the solver will be the AIs API call."""
+        if num_folds is not None and int(num_folds) != self.num_folds:
+            # Paper size follows the fold count, so a count other than the one
+            # this test was constructed for needs a fresh sheet. Safe here:
+            # nothing has been folded or punched yet.
+            self.num_folds = int(num_folds)
+            self.test_paper = Paper(*paper_size_for_folds(self.num_folds))
         # Perform the random folds, generate the choice papers, punch the test paper, and determine the correct answer.
-        self.fold_random(num_folds)
+        self.fold_random(self.num_folds)
         self.generate_choices()
         x, y = self.punch_random()
         # Snapshot the folded, punched paper here,
@@ -278,7 +385,12 @@ class CognitiveTest:
         solver_result = solver(prompt) if solver else None
         # Compile the results of the trial into a dictionary
         result = {
-            "num_folds": num_folds,
+            "num_folds": self.num_folds,
+            # The sheet this trial started from. Recorded per trial because it
+            # is derived from num_folds, so a run sweeping several fold counts
+            # uses a different (bigger) paper for each of them.
+            "paper_width": self.test_paper.ORIGINAL_WIDTH,
+            "paper_height": self.test_paper.ORIGINAL_HEIGHT,
             "fold_history": list(self.fold_orientations),
             "punch_position": (x, y),
             "correct_choice": correct_choice,

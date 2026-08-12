@@ -332,6 +332,27 @@ def _prepare_paperfold_target(old_name: str | None, new_name: str) -> str | None
     return None
 
 
+# A puzzle's paper doubles every second fold (see
+# paperfold.cognitive_test.paper_size_for_folds), and the prompt carries six
+# copies of that grid - the folded sheet plus five candidates. At 8 folds
+# that's a 64x64 sheet and a ~40k-character prompt, which is already at the
+# edge of what's reasonable to send per trial; past it the prompt, not the
+# spatial reasoning, is what the run would be measuring.
+MAX_FOLDS = 8
+
+
+def _fold_range_from_body(body: dict) -> tuple:
+    """The (from, to) fold range a paper-folding request is asking for.
+
+    The Studio always sends fold_min/fold_max. "num_folds" is what the single
+    -fold-count API took before fold ranges existed, so it's still honoured as
+    both ends of a one-entry range - an old script or a saved snippet posting
+    num_folds: 3 keeps working and means exactly what it used to.
+    """
+    fallback = body.get("num_folds", 3)
+    return body.get("fold_min", fallback), body.get("fold_max", fallback)
+
+
 class PaperfoldRun:
     def __init__(self):
         self.control = None      # run_control.RunControl while running
@@ -342,18 +363,44 @@ class PaperfoldRun:
         return self.thread is not None and self.thread.is_alive()
 
     @staticmethod
-    def _validate_setup(name: str, models: list, direction_mode: str, direction_labels: dict | None):
+    def _validate_folds(fold_min, fold_max):
+        """The run's fold range, as the list of fold counts to sweep. A run
+        can hold one fold count (3..3, the classic shape) or an increasing
+        range (3..6 = num_trials puzzles at 3 folds, then at 4, 5 and 6).
+        Returns (fold_counts, error_dict_or_None)."""
+        try:
+            lo, hi = int(fold_min), int(fold_max)
+        except (TypeError, ValueError):
+            return None, {"ok": False, "error": "Folds must be whole numbers."}
+        if lo < 1:
+            return None, {"ok": False, "error": "A puzzle needs at least 1 fold."}
+        if hi < lo:
+            return None, {"ok": False, "error":
+                     f"The fold range runs the wrong way: 'to' ({hi}) is below 'from' ({lo})."}
+        if hi > MAX_FOLDS:
+            return None, {"ok": False, "error":
+                     f"At most {MAX_FOLDS} folds - beyond that the paper (and the "
+                     f"prompt with it) grows past what's worth sending per trial."}
+        return list(range(lo, hi + 1)), None
+
+    @classmethod
+    def _validate_setup(cls, name: str, models: list, direction_mode: str,
+                        direction_labels: dict | None, fold_min, fold_max):
         """Shared by start_run and save_setup - both send/validate the exact
         same shape, so a saved setup and a launched run can never disagree
         about what's valid. Returns (specs, direction_mode, direction_labels,
-        error_dict_or_None).
+        fold_counts, error_dict_or_None).
         """
         name = (name or "").strip()
         if not EXPERIMENT_NAME_RE.match(name):
-            return None, None, None, {"ok": False, "error":
+            return None, None, None, None, {"ok": False, "error":
                      "Run name can only contain letters, numbers, underscores and hyphens."}
         if not models:
-            return None, None, None, {"ok": False, "error": "Pick at least one model."}
+            return None, None, None, None, {"ok": False, "error": "Pick at least one model."}
+
+        fold_counts, err = cls._validate_folds(fold_min, fold_max)
+        if err:
+            return None, None, None, None, err
 
         # results.json keys every model record by name, so two rows naming the
         # same model would silently collapse into one on save - the second
@@ -361,21 +408,21 @@ class PaperfoldRun:
         names = [str(m.get("name", "")).strip() for m in models]
         dupes = sorted({n for n in names if names.count(n) > 1})
         if dupes:
-            return None, None, None, {"ok": False, "error":
+            return None, None, None, None, {"ok": False, "error":
                      f"Listed more than once: {', '.join(dupes)}. Each model can only "
                      f"appear once in a run - remove the duplicate row."}
 
         direction_mode = (direction_mode or "real").strip().lower()
         if direction_mode not in ("real", "fixed", "random"):
-            return None, None, None, {"ok": False, "error": "direction_mode must be 'real', 'fixed', or 'random'."}
+            return None, None, None, None, {"ok": False, "error": "direction_mode must be 'real', 'fixed', or 'random'."}
         if direction_mode == "fixed":
             labels = {d: str((direction_labels or {}).get(d, "")).strip() for d in PAPERFOLD_DIRECTIONS}
             if not all(labels.values()):
-                return None, None, None, {"ok": False, "error":
+                return None, None, None, None, {"ok": False, "error":
                          "Fill in a placeholder name for all four directions, or switch to Real/Random."}
             lowered = [v.lower() for v in labels.values()]
             if len(set(lowered)) < 4:
-                return None, None, None, {"ok": False, "error": "Direction placeholder names must all be different."}
+                return None, None, None, None, {"ok": False, "error": "Direction placeholder names must all be different."}
             # Real direction words ARE allowed as placeholders: mapping North
             # to "East" and so on is the Stroop-style test - the word actively
             # contradicts its meaning. The only thing refused is a word that
@@ -383,7 +430,7 @@ class PaperfoldRun:
             # mapping is just Real mode and blurs what the run measured.
             selfies = sorted(d for d in PAPERFOLD_DIRECTIONS if labels[d].lower() == d)
             if selfies:
-                return None, None, None, {"ok": False, "error":
+                return None, None, None, None, {"ok": False, "error":
                          f"A placeholder can't be the direction it stands for "
                          f"({', '.join(s.capitalize() for s in selfies)}). Shuffled real "
                          f"words (Stroop-style) are fine - just not a word meaning itself."}
@@ -395,17 +442,17 @@ class PaperfoldRun:
         try:
             specs = [ModelSpec.from_dict(dict(m)) for m in models]
         except Exception as exc:
-            return None, None, None, {"ok": False, "error": f"Invalid model list: {exc}"}
+            return None, None, None, None, {"ok": False, "error": f"Invalid model list: {exc}"}
 
-        return specs, direction_mode, direction_labels, None
+        return specs, direction_mode, direction_labels, fold_counts, None
 
-    def start_run(self, name: str, num_trials, num_folds, models: list,
+    def start_run(self, name: str, num_trials, models: list,
                    direction_mode: str = "real", direction_labels: dict | None = None,
-                   old_name: str | None = None) -> dict:
+                   old_name: str | None = None, fold_min=3, fold_max=3) -> dict:
         if self.is_running():
             return {"ok": False, "error": "A paper-folding run is already in progress."}
-        specs, direction_mode, direction_labels, err = self._validate_setup(
-            name, models, direction_mode, direction_labels)
+        specs, direction_mode, direction_labels, fold_counts, err = self._validate_setup(
+            name, models, direction_mode, direction_labels, fold_min, fold_max)
         if err:
             return err
         name = (name or "").strip()
@@ -422,7 +469,7 @@ class PaperfoldRun:
         self.run_name = name
 
         # Unlike Studio.start_run(), the runner (and its results.json load,
-        # which can raise on a num_folds mismatch) is built INSIDE the worker
+        # which can raise on a fold-count mismatch) is built INSIDE the worker
         # thread, not synchronously here - there's no live-view URL that has
         # to be handed back immediately, so there's no reason to risk a
         # SystemExit-style escape from the request-handling thread. Any
@@ -432,7 +479,7 @@ class PaperfoldRun:
             try:
                 from llmits.paperfold.runner import PaperfoldRunner
                 runner = PaperfoldRunner(
-                    name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
+                    name, num_trials, fold_counts, specs, PAPERFOLD_RUNS_DIR,
                     direction_mode=direction_mode, direction_labels=direction_labels,
                     control=self.control,
                 )
@@ -446,9 +493,9 @@ class PaperfoldRun:
         self.thread.start()
         return {"ok": True}
 
-    def save_setup(self, name: str, num_trials, num_folds, models: list,
+    def save_setup(self, name: str, num_trials, models: list,
                     direction_mode: str = "real", direction_labels: dict | None = None,
-                    old_name: str | None = None) -> dict:
+                    old_name: str | None = None, fold_min=3, fold_max=3) -> dict:
         """Write a run's configuration to results.json without running
         anything - no model is built, no API is called. Lets a setup (name,
         trials, folds, direction mode, model list) be saved and come back
@@ -458,8 +505,8 @@ class PaperfoldRun:
         through, instead of the unreached models silently vanishing from the
         "resume this run" list.
         """
-        specs, direction_mode, direction_labels, err = self._validate_setup(
-            name, models, direction_mode, direction_labels)
+        specs, direction_mode, direction_labels, fold_counts, err = self._validate_setup(
+            name, models, direction_mode, direction_labels, fold_min, fold_max)
         if err:
             return err
         name = (name or "").strip()
@@ -473,7 +520,7 @@ class PaperfoldRun:
         try:
             from llmits.paperfold.runner import PaperfoldRunner
             runner = PaperfoldRunner(
-                name, num_trials, num_folds, specs, PAPERFOLD_RUNS_DIR,
+                name, num_trials, fold_counts, specs, PAPERFOLD_RUNS_DIR,
                 direction_mode=direction_mode, direction_labels=direction_labels,
             )
         except ValueError as exc:
@@ -664,18 +711,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self._remove_env(self._body()))
             if p == "/api/paperfold/run/start":
                 b = self._body()
+                lo, hi = _fold_range_from_body(b)
                 return self._send(200, PAPERFOLD.start_run(
                     b.get("name", ""), b.get("num_trials", 30),
-                    b.get("num_folds", 3), b.get("models", []),
+                    b.get("models", []),
                     b.get("direction_mode", "real"), b.get("direction_labels"),
-                    b.get("old_name")))
+                    b.get("old_name"), lo, hi))
             if p == "/api/paperfold/setup/save":
                 b = self._body()
+                lo, hi = _fold_range_from_body(b)
                 return self._send(200, PAPERFOLD.save_setup(
                     b.get("name", ""), b.get("num_trials", 30),
-                    b.get("num_folds", 3), b.get("models", []),
+                    b.get("models", []),
                     b.get("direction_mode", "real"), b.get("direction_labels"),
-                    b.get("old_name")))
+                    b.get("old_name"), lo, hi))
             if p == "/api/paperfold/run/pause":
                 if PAPERFOLD.control: PAPERFOLD.control.pause()
                 return self._send(200, {"ok": True})
@@ -941,11 +990,20 @@ class Handler(BaseHTTPRequestHandler):
                 plots = d / "plots"
                 files = [f.name for f in sorted(plots.glob("*.png"))] if plots.exists() else []
                 models = results.get("models", {})
+                # Runs saved before fold ranges existed have only num_folds -
+                # one fold count, which is exactly a one-entry range.
+                fold_counts = results.get("fold_counts")
+                if not fold_counts:
+                    fold_counts = [results.get("num_folds", 3)]
                 out.append({
                     "name": d.name,
                     "plots": files,
+                    # Trials per model *per fold count*.
                     "num_trials": results.get("num_trials"),
                     "num_folds": results.get("num_folds"),
+                    "fold_counts": fold_counts,
+                    "fold_min": min(fold_counts),
+                    "fold_max": max(fold_counts),
                     "direction_mode": results.get("direction_mode", "real"),
                     # Only present (and only meaningful) for direction_mode
                     # "fixed" - "random" mode has no single mapping to report,

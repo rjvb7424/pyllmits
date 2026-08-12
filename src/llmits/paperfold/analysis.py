@@ -21,6 +21,7 @@ analyze_results.py, with these changes:
 Plots are written to <run_dir>/plots/ as <kind>_of_<name>.png, matching the
 naming convention llmits.analysis.plots (Crafter's) already uses:
   * letter_distribution_of_<name>.png   - predicted vs correct answer letter
+  * accuracy_by_folds_of_<name>.png     - accuracy vs number of folds
   * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst
   * accuracy_vs_tokens_of_<name>.png    - accuracy vs average token spend
   * accuracy_vs_time_of_<name>.png      - accuracy vs average response time
@@ -41,6 +42,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from llmits.paperfold.cognitive_test import paper_size_for_folds
+
 # The letters used for the candidates in the spatial visualisation test.
 LETTERS = ["A", "B", "C", "D", "E"]
 
@@ -59,8 +62,9 @@ FALLBACK_COLORMAPS = [plt.get_cmap("Greens"), plt.get_cmap("Purples"), plt.get_c
 # The range of shades to use for models within a provider's colormap
 SHADE_RANGE = (0.35, 0.85)
 
-PLOT_KINDS = ("letter_distribution", "accuracy_by_model", "accuracy_vs_tokens",
-              "accuracy_vs_time", "elapsed_time_by_model", "tokens_by_model")
+PLOT_KINDS = ("letter_distribution", "accuracy_by_folds", "accuracy_by_model",
+              "accuracy_vs_tokens", "accuracy_vs_time", "elapsed_time_by_model",
+              "tokens_by_model")
 
 
 def plot_filename(kind: str, name_slug: str) -> str:
@@ -181,6 +185,115 @@ def plot_letter_distribution(rows, out: Path, experiment_name: str) -> None:
                  fontsize=13, pad=28)
     ax.legend(fontsize=9)
     _finish(fig, ax, out, rotate_xticks=False)
+
+
+def plot_accuracy_by_folds(rows, out: Path, experiment_name: str) -> None:
+    """Accuracy against how many times the paper was folded - the difficulty
+    curve, one line per model.
+
+    This is the plot a fold-range run exists for: each extra fold doubles the
+    layers a solver has to unfold mentally, so a model that's really reasoning
+    about the geometry should slide downward as folds increase, while one that
+    was pattern-matching (or guessing) sits flat near the 20% five-choice
+    chance line from the start.
+
+    Trials are grouped by their own recorded "num_folds", so this works
+    whatever the run swept - and a run that only ever used one fold count
+    simply plots one point per model.
+    """
+    by_model: dict[str, dict[int, list[int]]] = {}
+    for r in rows:
+        folds = r.get("num_folds")
+        if folds is None:
+            continue          # pre-fold-count trial data; nothing to place it at
+        m = r.get("model_version", "unknown")
+        by_model.setdefault(m, {}).setdefault(int(folds), []).append(1 if r["is_correct"] else 0)
+
+    fold_values = sorted({f for per_folds in by_model.values() for f in per_folds})
+    colors = model_color_map(rows)
+
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+    if not fold_values:
+        ax.text(0.5, 0.5, "No trials with a recorded fold count yet",
+                ha="center", va="center", transform=ax.transAxes,
+                fontsize=11, color=LABEL_GRAY)
+        ax.set_axis_off()
+        fig.savefig(out, dpi=130, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    # Best model last, so the legend reads worst-to-best top-down the same way
+    # the accuracy-by-model bars are ranked.
+    def overall(model: str) -> float:
+        flags = [f for per_folds in by_model[model].values() for f in per_folds]
+        return sum(flags) / len(flags)
+
+    for model in sorted(by_model, key=overall):
+        per_folds = by_model[model]
+        xs = [f for f in fold_values if f in per_folds]
+        ys = [100 * sum(per_folds[f]) / len(per_folds[f]) for f in xs]
+        ax.plot(xs, ys, marker="o", markersize=5, linewidth=1.8,
+                color=colors[model], label=model, alpha=0.9, zorder=3)
+
+    ax.axhline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
+    ax.set_xticks(fold_values)
+    ax.set_xticklabels([str(f) for f in fold_values])
+    ax.set_xlabel("Number of folds (how many times the paper was folded)",
+                  color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
+    ax.set_title(f"Accuracy by number of folds of {display_name(experiment_name)} experiment",
+                 fontsize=13, pad=28)
+    # Paper size is derived from the fold count, so say what the sheet grew
+    # to across the x axis - it's the other thing that changed along it, and
+    # it's why the prompts get longer toward the right.
+    ax.annotate(f"Trials per point: {_trials_per_point(by_model, fold_values)}  |  "
+                f"{_paper_size_summary(rows, fold_values)}",
+                xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
+                textcoords="offset points", ha="center", va="bottom",
+                fontsize=9, color=LABEL_GRAY)
+    ax.set_ylim(-5, 110)
+    ax.margins(x=0.06)
+    ax.grid(True, alpha=0.3)
+    # Outside the axes on the right: a run can hold a dozen-plus models, and an
+    # in-axes legend that size covers the lines it's labelling.
+    ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5),
+              frameon=False)
+    _finish(fig, ax, out, rotate_xticks=False)
+
+
+def _trials_per_point(by_model: dict, fold_values: list[int]) -> str:
+    """How many trials each point averages over - one number when every model
+    ran the same amount at every fold count, a range when they differ (a run
+    stopped partway, or a model added late)."""
+    counts = {len(per_folds[f]) for per_folds in by_model.values()
+              for f in fold_values if f in per_folds}
+    if len(counts) == 1:
+        return str(counts.pop())
+    return f"{min(counts)}-{max(counts)}"
+
+
+def _paper_size_label(rows, folds: int) -> str:
+    """The sheet size used at a given fold count, e.g. "16x16".
+
+    Read from the trials themselves where possible. Trials recorded before
+    paper size was written into each result fall back to deriving it from the
+    fold count - the same rule the run itself used, and for the 3-fold runs
+    that predate the field it gives exactly the 16x16 they were answered on.
+    """
+    for r in rows:
+        if r.get("num_folds") == folds and r.get("paper_width"):
+            return f"{r['paper_width']}x{r['paper_height']}"
+    width, height = paper_size_for_folds(folds)
+    return f"{width}x{height}"
+
+
+def _paper_size_summary(rows, fold_values: list[int]) -> str:
+    """How the paper grew across the x axis, in one short phrase - listing
+    every fold count separately gets unreadable past a few of them."""
+    first, last = _paper_size_label(rows, fold_values[0]), _paper_size_label(rows, fold_values[-1])
+    if len(fold_values) == 1 or first == last:
+        return f"paper {first}"
+    return f"paper {first} at {fold_values[0]} folds, up to {last} at {fold_values[-1]}"
 
 
 def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
@@ -348,6 +461,7 @@ def build_all_plots(rows, plots_dir: Path, slug: str) -> None:
     """
     plotters = {
         "letter_distribution": plot_letter_distribution,
+        "accuracy_by_folds": plot_accuracy_by_folds,
         "accuracy_by_model": plot_accuracy_by_model,
         "accuracy_vs_tokens": plot_accuracy_vs_tokens,
         "accuracy_vs_time": plot_accuracy_vs_time,

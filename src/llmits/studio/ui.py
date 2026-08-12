@@ -645,10 +645,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div id="pfSetupFields">
         <div class="row" style="margin-top:var(--s4)">
           <div><label for="pf_name">Run name</label><input id="pf_name" placeholder="my_paperfold_run" oninput="pfUpdateNameHint()"></div>
-          <div><label for="pf_trials">Trials per model</label><input id="pf_trials" type="number" min="1" value="30"></div>
-          <div><label for="pf_folds">Folds per puzzle</label><input id="pf_folds" type="number" min="1" value="3"></div>
+          <div><label for="pf_trials">Trials per fold count</label><input id="pf_trials" type="number" min="1" value="30" oninput="pfUpdateFoldHint()"></div>
+          <div><label for="pf_folds_min">Folds from</label><input id="pf_folds_min" type="number" min="1" max="8" value="3" oninput="pfUpdateFoldHint()"></div>
+          <div><label for="pf_folds_max">Folds to</label><input id="pf_folds_max" type="number" min="1" max="8" value="3" oninput="pfUpdateFoldHint()"></div>
         </div>
         <div id="pfNameHint" class="hidden"></div>
+        <!-- Says what the fold range adds up to: how many puzzles per model,
+             and how big the paper gets at each end of the range. -->
+        <div id="pfFoldHint" class="sub" style="margin-top:var(--s2)"></div>
 
         <label for="pf_dirmode">Direction names</label>
         <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Optionally replace north/south/east/west with placeholder words in the prompt, to test whether a model is doing real spatial reasoning or just pattern-matching on those specific direction words.</div>
@@ -685,6 +689,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="chip"><div class="k">State</div><div class="v" id="pfState">idle</div></div>
         <div class="chip"><div class="k">Model</div><div class="v" id="pfModel">&ndash;</div></div>
         <div class="chip"><div class="k">Trial</div><div class="v" id="pfTrial">&ndash;</div></div>
+        <div class="chip"><div class="k">Folds</div><div class="v" id="pfFolds">&ndash;</div></div>
         <div class="chip"><div class="k">This question</div><div class="v accent" id="pfTimerCurrent">&ndash;</div></div>
         <div class="chip"><div class="k">Previous question</div><div class="v" id="pfTimerPrev">&ndash;</div></div>
       </div>
@@ -1292,6 +1297,43 @@ function pfUpdateNameHint(){
   el.textContent=msg; el.className=msg?cls:'hidden';
 }
 
+// ---------- Paper folding: the fold range ----------
+// A run can test one fold count (from == to, the classic setup) or a whole
+// increasing range: "Trials per fold count" puzzles at 3 folds, then the same
+// number at 4, at 5, ... Every trial records the fold count it was answered
+// at, and the accuracy-by-folds graph plots them as a difficulty curve.
+//
+// Paper size follows the fold count instead of being a fixed 16x16: each fold
+// halves one side, so a 6-fold puzzle needs a far bigger sheet than a 2-fold
+// one or the last folds would have nothing left to halve. The formula mirrors
+// paperfold.cognitive_test.paper_size_for_folds - folds are split across both
+// axes, so the sheet doubles every second fold. PF_MAX_FOLDS mirrors
+// studio.server.MAX_FOLDS; the server re-validates either way, this just
+// keeps the field from offering something it would refuse.
+const PF_MAX_FOLDS=8, PF_MIN_FOLDED_SIDE=4;
+function pfPaperSide(folds){return PF_MIN_FOLDED_SIDE*Math.pow(2,Math.ceil(folds/2));}
+function pfPaperLabel(folds){const s=pfPaperSide(folds);return s+'x'+s;}
+function pfFoldRange(){
+  const lo=Math.max(1,+$('pf_folds_min').value||1);
+  const hi=Math.max(1,+$('pf_folds_max').value||1);
+  return {lo,hi};
+}
+function pfUpdateFoldHint(){
+  const el=$('pfFoldHint'); if(!el)return;
+  const {lo,hi}=pfFoldRange(), per=Math.max(1,+$('pf_trials').value||1);
+  if(hi<lo){el.textContent=`'Folds to' (${hi}) is below 'Folds from' (${lo}) - a run folds from fewer to more.`;
+    el.className='sub pf-hint-warn';return;}
+  if(hi>PF_MAX_FOLDS){el.textContent=`At most ${PF_MAX_FOLDS} folds - past that the paper, and the prompt carrying six copies of it, gets impractically large.`;
+    el.className='sub pf-hint-warn';return;}
+  el.className='sub';
+  if(lo==hi){el.textContent=`${per} puzzles per model, all at ${lo} fold${lo==1?'':'s'} on a ${pfPaperLabel(lo)} paper. `
+    +`Raise 'Folds to' to sweep a range instead and get the accuracy-vs-folds curve.`;return;}
+  const counts=[];for(let f=lo;f<=hi;f++)counts.push(f);
+  el.textContent=`${per} puzzles at each of ${counts.join(', ')} folds = ${per*counts.length} per model. `
+    +`The paper grows with the folds, ${pfPaperLabel(lo)} at ${lo} up to ${pfPaperLabel(hi)} at ${hi}, `
+    +`so the later trials send much longer prompts. Graphed as accuracy by number of folds.`;
+}
+
 // ---------- Paper folding: direction naming ----------
 // "real" (default) leaves the prompt exactly as before. "fixed" swaps in one
 // set of placeholder words for every trial in the run. "random" draws a
@@ -1445,7 +1487,10 @@ function pfBuildRunBody(){
     if(vals.some(v=>!v))return{error:'Fill in all four direction placeholder names, or switch to Real/Random'};
     if(new Set(vals.map(v=>v.toLowerCase())).size<4)return{error:'Direction placeholder names must all be different'};
   }
-  return{body:{name, num_trials:+$('pf_trials').value||30, num_folds:+$('pf_folds').value||3, models,
+  const {lo,hi}=pfFoldRange();
+  if(hi<lo)return{error:`Fold range runs backwards: 'Folds to' (${hi}) is below 'Folds from' (${lo})`};
+  if(hi>PF_MAX_FOLDS)return{error:`At most ${PF_MAX_FOLDS} folds - the paper (and the prompt) gets impractically large past that`};
+  return{body:{name, num_trials:+$('pf_trials').value||30, fold_min:lo, fold_max:hi, models,
     direction_mode, direction_labels, old_name:PF_LOADED_NAME}};
 }
 let pfLastState=null;
@@ -1539,6 +1584,10 @@ function pfUpdateStatus(s){
   $('pfState').textContent=s.state||'idle';
   $('pfModel').textContent=s.model||'–';
   $('pfTrial').textContent=s.model?`${s.trial||'–'} / ${s.num_trials||'–'}`:'–';
+  // Which rung of the fold range this trial is on, and the sheet that rung
+  // uses - both change as a sweep works its way up.
+  $('pfFolds').textContent=(s.model&&s.num_folds!=null)
+    ?`${s.num_folds}${s.paper_size?' ('+s.paper_size+')':''}`:'–';
   const last=$('pfLast');
   if(s.last_predicted!=null){
     last.textContent=`${s.last_predicted} ${s.last_is_correct?'✓ correct':'✗ wrong (was '+s.last_correct_choice+')'}`;
@@ -1644,7 +1693,12 @@ async function pfDownloadAllGraphs(){
 function pfApplyRunToSetup(run){
   $('pf_name').value=run.name;
   if(run.num_trials!=null)$('pf_trials').value=run.num_trials;
-  if(run.num_folds!=null)$('pf_folds').value=run.num_folds;
+  // fold_min/fold_max come from the run's recorded fold counts; a run saved
+  // before fold ranges existed reports its single num_folds as both ends.
+  const lo=run.fold_min!=null?run.fold_min:run.num_folds, hi=run.fold_max!=null?run.fold_max:run.num_folds;
+  if(lo!=null)$('pf_folds_min').value=lo;
+  if(hi!=null)$('pf_folds_max').value=hi;
+  pfUpdateFoldHint();
   $('pf_dirmode').value=run.direction_mode||'real';
   // Always overwrite the four placeholder inputs, even when this run doesn't
   // use them - otherwise the previous run's words linger in the hidden fields
@@ -1662,7 +1716,9 @@ function pfApplyRunToSetup(run){
 function pfResetSetup(){
   $('pf_name').value='';
   $('pf_trials').value=30;
-  $('pf_folds').value=3;
+  $('pf_folds_min').value=3;
+  $('pf_folds_max').value=3;
+  pfUpdateFoldHint();
   $('pf_dirmode').value='real';
   ['north','south','east','west'].forEach(d=>{$('pf_dir_'+d).value='';});
   pfUpdateDirMode();
@@ -1808,7 +1864,7 @@ function showWelcome(){
 
 // ---------- boot ----------
 (async()=>{META=await api('/api/meta');renderPalette();loadConfigs();loadEnvStatus();pollTerminal();pollRunStatus();
-  PFCFG.models=[pfDefaultModel()];pfRenderModels();pfLoadRuns();pfPollStatus();})();
+  PFCFG.models=[pfDefaultModel()];pfRenderModels();pfUpdateFoldHint();pfLoadRuns();pfPollStatus();})();
 </script>
 </body></html>
 """
