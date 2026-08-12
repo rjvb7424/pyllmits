@@ -1769,8 +1769,11 @@ function toggleTerminal(){const t=$('terminal'),collapsed=t.classList.toggle('co
 // Empties the panel without touching the server's buffer or TERM_SEQ: polling
 // only ever asks for lines after the last one it saw, so nothing cleared here
 // comes back on the next tick, and output from this point on still arrives.
+// Leaves the panel genuinely blank rather than swapping in a "cleared"
+// placeholder - Clear is self-explanatory, and a line of text sitting where
+// the output used to be reads like output.
 function clearTerminal(){
-  $('termOut').innerHTML='<div class="empty">Cleared &ndash; new output will appear here&hellip;</div>';
+  $('termOut').innerHTML='';
 }
 function termAppend(lines){
   const out=$('termOut'); const empty=out.querySelector('.empty'); if(empty)empty.remove();
