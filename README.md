@@ -1,6 +1,6 @@
 # 🧩 Pyllmits Documentation & User Guide
 
-_Last updated: August 5, 2026_
+_Last updated: August 13, 2026_
 
 > 📓 This guide is also available as an interactive [Google Colab notebook](https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing).
 
@@ -62,8 +62,10 @@ Already run something and want to pick up where you left off? The **"resume or e
 
 **Run** starts it, with a live status panel showing the current model, trial, how many folds this puzzle has (and the paper size that goes with it), its last answer, and — if you're using placeholder words — exactly which words meant which direction on that trial. **Graphs**, right below it, works exactly like Crafter's: pick a run, view or regenerate its charts, or delete it once you're done with it.
 
+One of those charts is built for comparing runs rather than models: **average accuracy** is a single bar, the whole run boiled down to one number, with a thin line through it showing the spread it's hiding (lowest model to highest). The same average also appears as an extra bar on top of the accuracy-by-model ranking, so you can see at a glance which models sit above the run's average and which below. If the run swept a fold range, the average graph adds a bar per fold count too — the difficulty trend as one averaged shape, instead of a dozen crossing lines.
+
 ## 5 · Putting it to use
 
 The point of all this is comparison: run the same setup against several models at once, and the graphs show you who's actually good at this versus who just talks a good game. Because everything (results, graphs, replays) is saved to disk the moment it's produced, you can walk away mid-run, come back later, add a model you forgot, or push the trial count higher — and pick up exactly where you left off instead of starting over.
 
-The Paper Folding side pushes that comparison one step further, in two directions. Run it once with real direction names, once with random placeholder words, and compare the two: a big drop in accuracy between them is the clearest signal you'll get that a model's "spatial reasoning" was leaning on the words themselves, not the geometry. And run it across a fold range instead of one fixed difficulty: where each model's curve leaves the chance line tells you how much folding it can actually hold in its head, which a single accuracy number never will.
+The Paper Folding side pushes that comparison one step further, in two directions. Run it once with real direction names, once with random placeholder words, and compare the two: a big drop in accuracy between them is the clearest signal you'll get that a model's "spatial reasoning" was leaning on the words themselves, not the geometry. That comparison is what the **average accuracy** graph is for — one bar per run, so the difference between two setups is a number that moved rather than a dozen bars you have to re-read every time. Check the spread line before believing it, though: an average that fell because every model fell is a real effect of the wording, while one that fell because a single model collapsed is a fact about that model. And run it across a fold range instead of one fixed difficulty: where each model's curve leaves the chance line tells you how much folding it can actually hold in its head, which a single accuracy number never will.
