@@ -29,10 +29,17 @@ naming convention llmits.analysis.plots (Crafter's) already uses:
   * average_accuracy_of_<name>.png      - that average on its own, the number
                                           to carry between runs when comparing
                                           two environments
+  * average_tokens_of_<name>.png        - the same one-bar summary for token
+                                          spend: what the environment cost
+  * average_time_of_<name>.png          - and for response time
   * accuracy_vs_tokens_of_<name>.png    - accuracy vs average token spend
   * accuracy_vs_time_of_<name>.png      - accuracy vs average response time
   * elapsed_time_by_model_of_<name>.png - average response time per model
   * tokens_by_model_of_<name>.png       - average token consumption per model
+
+The three average_* charts share one shape (_plot_average) and the three
+"by model" rankings share another (_draw_ranked_with_average), so a summary
+bar means the same thing wherever it appears.
 """
 
 from __future__ import annotations
@@ -69,7 +76,8 @@ FALLBACK_COLORMAPS = [plt.get_cmap("Greens"), plt.get_cmap("Purples"), plt.get_c
 SHADE_RANGE = (0.35, 0.85)
 
 PLOT_KINDS = ("letter_distribution", "accuracy_by_folds", "accuracy_by_model",
-              "average_accuracy", "accuracy_vs_tokens", "accuracy_vs_time",
+              "average_accuracy", "average_tokens", "average_time",
+              "accuracy_vs_tokens", "accuracy_vs_time",
               "elapsed_time_by_model", "tokens_by_model")
 
 # The average is a summary of the models, not one of them, so it's drawn in a
@@ -121,39 +129,51 @@ def filter_scored(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [r for r in rows if r.get("predicted_choice") is not None]
 
 
-def model_accuracies(rows) -> list[tuple[str, float, int]]:
-    """(model, accuracy %, trials) for every model, ranked worst-to-best.
+def accuracy_of(rows) -> float:
+    """Percent of a set of trials answered correctly."""
+    return 100 * sum(1 for r in rows if r["is_correct"]) / len(rows) if rows else 0.0
 
-    The one place a per-model success rate is worked out, so the ranked bars
-    and the averages drawn on top of them can never disagree.
+
+def field_average(field: str):
+    """A measure reading one numeric field off each trial and averaging it -
+    how "average tokens" and "average response time" are both expressed."""
+    def measure(rows) -> float:
+        return (sum(float(r.get(field) or 0) for r in rows) / len(rows)) if rows else 0.0
+    return measure
+
+
+def model_values(rows, measure=accuracy_of) -> list[tuple[str, float, int]]:
+    """(model, value, trials) for every model, ranked lowest-to-highest.
+
+    The one place a per-model figure is worked out, whatever the measure, so
+    the ranked bars and the averages drawn on top of them can never disagree.
     """
-    by_model: dict[str, list[int]] = {}
+    by_model: dict[str, list[dict]] = {}
     for r in rows:
-        m = r.get("model_version", "unknown")
-        by_model.setdefault(m, []).append(1 if r["is_correct"] else 0)
-    ranked = sorted(by_model.items(), key=lambda kv: sum(kv[1]) / len(kv[1]))
-    return [(m, 100 * sum(flags) / len(flags), len(flags)) for m, flags in ranked]
+        by_model.setdefault(r.get("model_version", "unknown"), []).append(r)
+    ranked = sorted(by_model.items(), key=lambda kv: measure(kv[1]))
+    return [(m, measure(rs), len(rs)) for m, rs in ranked]
 
 
-def macro_average(accuracies) -> float:
-    """The average of the per-model success bars: each model counts once,
-    however many trials it happened to run.
+def model_accuracies(rows) -> list[tuple[str, float, int]]:
+    """(model, accuracy %, trials) for every model, ranked worst-to-best."""
+    return model_values(rows, accuracy_of)
+
+
+def macro_average(values) -> float:
+    """The average of the per-model bars: each model counts once, however many
+    trials it happened to run.
 
     Deliberately not the same thing as pooling every trial together. A run
     stopped partway can leave one model with a single trial and another with
     sixty, and pooling would let whichever model ran longest speak for the
-    whole experiment - so a half-finished run would read as the accuracy of
-    its fastest model. Averaging the bars keeps every model's voice the same
-    size; where the two figures disagree the subtitle prints both rather than
-    quietly picking one.
+    whole experiment - so a half-finished run would read as the accuracy (or
+    the token bill) of its fastest model. Averaging the bars keeps every
+    model's voice the same size; where the two figures disagree the subtitle
+    prints both rather than quietly picking one.
     """
-    accuracies = list(accuracies)
-    return sum(accuracies) / len(accuracies) if accuracies else 0.0
-
-
-def _pooled_average(rows) -> float:
-    """Accuracy across every trial at once, ignoring which model ran it."""
-    return 100 * sum(1 for r in rows if r["is_correct"]) / len(rows) if rows else 0.0
+    values = list(values)
+    return sum(values) / len(values) if values else 0.0
 
 
 def _count_summary(counts) -> str:
@@ -167,17 +187,22 @@ def _count_summary(counts) -> str:
     return f"{min(counts)}-{max(counts)}"
 
 
-def _average_note(rows, per_model) -> str:
+def _average_note(rows, per_model, measure=accuracy_of, fmt=lambda v: f"{v:.0f}%") -> str:
     """Subtitle saying what the average bar is an average of - and, when
     unequal trial counts pull the two apart, what pooling every trial would
-    have said instead."""
-    macro, pooled = macro_average(a for _, a, _ in per_model), _pooled_average(rows)
+    have said instead.
+
+    The gap is judged relative to the average itself (a couple of percent)
+    rather than in fixed units, so the same rule works for a figure that runs
+    0-100 and one measured in thousands of tokens.
+    """
+    macro, pooled = macro_average(v for _, v, _ in per_model), measure(rows)
     trials = _count_summary(n for _, _, n in per_model)
     note = (f"Average = mean of the {len(per_model)} model "
             f"bar{'' if len(per_model) == 1 else 's'}  |  "
             f"{trials} trial{'' if trials == '1' else 's'} per model")
-    if abs(macro - pooled) >= 1:
-        note += f"  |  pooling every trial instead: {pooled:.0f}%"
+    if abs(macro - pooled) >= max(0.02 * abs(macro), 1e-9):
+        note += f"  |  pooling every trial instead: {fmt(pooled)}"
     return note
 
 
@@ -455,38 +480,10 @@ def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
     still see who sits above the average and who below.
     """
     per_model = model_accuracies(rows)
-    models = [m for m, _, _ in per_model]
-    accuracies = [a for _, a, _ in per_model]
-    average = macro_average(accuracies)
-    colors_map = model_color_map(rows)
-    colors = [colors_map[m] for m in models]
-
-    # Numeric y positions rather than the model names themselves: the average
-    # needs a slot of its own with a gap under it, which categorical bars
-    # (evenly spaced, one per label) can't leave room for.
-    ys = list(range(len(models)))
-    average_y = len(models) + AVERAGE_GAP
-
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(models) + 2) + 1)))
-    bars = ax.barh(ys, accuracies, color=colors)
-    average_bar = ax.barh([average_y], [average], color=AVERAGE_COLOR,
-                          hatch="//", edgecolor="white", linewidth=0)
-    for bar, acc in zip(bars, accuracies):
-        ax.text(bar.get_width() + 1.5, bar.get_y() + bar.get_height() / 2,
-                f"{acc:.0f}%", va="center", fontsize=9, color="#52514e")
-    ax.text(average_bar[0].get_width() + 1.5,
-            average_bar[0].get_y() + average_bar[0].get_height() / 2,
-            f"{average:.0f}%", va="center", fontsize=9, color="#52514e",
-            fontweight="bold")
-    ax.set_yticks(ys + [average_y])
-    ax.set_yticklabels(models + [f"Average (all {len(models)} models)"])
-    ax.get_yticklabels()[-1].set_fontweight("bold")
+    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 2) + 1)))
+    average = _draw_ranked_with_average(ax, per_model, model_color_map(rows),
+                                        fmt=lambda v: f"{v:.0f}%", label_pad=1.5)
     ax.axvline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
-    # A longer dash than the chance line's: the two sit in the same gray family
-    # (the average line matches the average bar on purpose) and would otherwise
-    # be hard to tell apart where they fall close together.
-    ax.axvline(average, linestyle=(0, (6, 3)), linewidth=1.2, color=AVERAGE_COLOR,
-               label=f"Average ({average:.0f}%)")
     ax.set_xlabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"Accuracy by model of {display_name(experiment_name)} experiment",
@@ -500,24 +497,69 @@ def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
     _finish(fig, ax, out, rotate_xticks=False)
 
 
-def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
-    """The experiment's average accuracy on its own - the one number to carry
-    from run to run.
+def _draw_ranked_with_average(ax, per_model, colors_map, *, fmt, label_pad) -> float:
+    """Draw ranked horizontal bars with the run's average as one more bar
+    above them, and return that average.
 
-    Every other plot here compares models inside a single run. This one exists
-    to compare runs *to each other*: run the same models on real direction
-    names, then on made-up ones, and the gap between these two bars is the
-    whole finding, with nothing else on the graph to read past. The thin line
-    through each bar is the spread the average hides (lowest model to highest),
-    because five points of movement means something very different when every
-    model moved together than when one model collapsed and the rest held.
-
-    A run that swept fold counts also gets a bar per fold count, so the
-    difficulty trend reads as one averaged shape instead of the dozen-plus
-    crossing lines in accuracy_by_folds.
+    Shared by every "by model" chart here (accuracy, tokens, response time),
+    so the summary row looks and means the same thing on all of them. The
+    average is kept visually separate - gray, hatched, a blank slot below it -
+    so it never reads as one more model, and repeated as a dashed line down
+    the ranked bars so you can still see who sits above it and who below.
     """
-    per_model = model_accuracies(rows)
-    accuracies = [a for _, a, _ in per_model]
+    models = [m for m, _, _ in per_model]
+    values = [v for _, v, _ in per_model]
+    average = macro_average(values)
+
+    # Numeric y positions rather than the model names themselves: the average
+    # needs a slot of its own with a gap under it, which categorical bars
+    # (evenly spaced, one per label) can't leave room for.
+    ys = list(range(len(models)))
+    average_y = len(models) + AVERAGE_GAP
+
+    bars = ax.barh(ys, values, color=[colors_map[m] for m in models])
+    average_bar = ax.barh([average_y], [average], color=AVERAGE_COLOR,
+                          hatch="//", edgecolor="white", linewidth=0)
+    for bar, value in zip(bars, values):
+        ax.text(bar.get_width() + label_pad, bar.get_y() + bar.get_height() / 2,
+                fmt(value), va="center", fontsize=9, color="#52514e")
+    ax.text(average_bar[0].get_width() + label_pad,
+            average_bar[0].get_y() + average_bar[0].get_height() / 2,
+            fmt(average), va="center", fontsize=9, color="#52514e",
+            fontweight="bold")
+    ax.set_yticks(ys + [average_y])
+    ax.set_yticklabels(models + [f"Average (all {len(models)} models)"])
+    ax.get_yticklabels()[-1].set_fontweight("bold")
+    # A longer dash than the chance line's: the two sit in the same gray family
+    # (the average line matches the average bar on purpose) and would otherwise
+    # be hard to tell apart where they fall close together.
+    ax.axvline(average, linestyle=(0, (6, 3)), linewidth=1.2, color=AVERAGE_COLOR,
+               label=f"Average ({fmt(average)})")
+    return average
+
+
+def _plot_average(rows, out: Path, experiment_name: str, *, measure, metric: str,
+                  ylabel: str, fmt, chance: float | None = None,
+                  ylim: tuple[float, float] | None = None) -> None:
+    """Shared shape for the whole-run average charts: one bar for the entire
+    experiment, plus a bar per fold count when the run swept them.
+
+    Every other plot here compares models inside a single run. These exist to
+    compare runs *to each other*: run the same models on real direction names,
+    then on made-up ones, and the gap between the two bars is the whole
+    finding, with nothing else on the graph to read past. The thin line
+    through each bar is the spread the average hides (lowest model to
+    highest), because a shift means something very different when every model
+    moved together than when one model moved and the rest held.
+
+    On a fold sweep the per-fold bars turn the difficulty trend into one
+    averaged shape instead of the dozen-plus crossing lines in
+    accuracy_by_folds - and for the cost measures they show the thing that
+    drives the bill, since every extra fold means a bigger sheet and a longer
+    prompt to reason over.
+    """
+    per_model = model_values(rows, measure)
+    values_by_model = [v for _, v, _ in per_model]
     folds_seen = fold_values(rows)
 
     fig, ax = plt.subplots(figsize=(max(5.0, 1.5 * (len(folds_seen) + 1) + 3.0), 5.5))
@@ -536,20 +578,27 @@ def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
     columns: list[tuple[str, float, float, float, int]] = []
     if len(folds_seen) > 1:
         for f in folds_seen:
-            at_fold = [a for _, a, _ in model_accuracies(
+            at_fold = [v for _, v, _ in model_values(
                 [r for r in rows if r.get("num_folds") is not None
-                 and int(r["num_folds"]) == f])]
+                 and int(r["num_folds"]) == f], measure)]
             columns.append((str(f), macro_average(at_fold),
                             min(at_fold), max(at_fold), len(at_fold)))
     columns.append(("All folds" if len(folds_seen) > 1 else f"All {len(per_model)} models",
-                    macro_average(accuracies), min(accuracies), max(accuracies),
-                    len(per_model)))
+                    macro_average(values_by_model),
+                    min(values_by_model), max(values_by_model), len(per_model)))
 
     xs = list(range(len(columns)))
     if len(columns) > 1:
         xs[-1] += AVERAGE_GAP     # set the whole-run bar apart from its breakdown
     values = [c[1] for c in columns]
     colors = [AVERAGE_BREAKDOWN_COLOR] * (len(columns) - 1) + [AVERAGE_COLOR]
+
+    # Accuracy is framed 0-100 whatever the run did, so two runs' bars are
+    # directly comparable by eye. Tokens and seconds have no such ceiling, so
+    # they scale to the tallest range line - the printed figure carries the
+    # comparison there, not the bar height.
+    top = ylim[1] if ylim else (1.25 * max(c[3] for c in columns) or 1.0)
+    headroom = 0.025 * top   # gap between a range line's cap and its label
 
     ax.bar(xs, values, width=0.6 if len(columns) == 1 else 0.72,
            color=colors, zorder=2)
@@ -562,10 +611,12 @@ def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
     # top of the spread it's summarising. The whole-run one is bold: on a fold
     # sweep it's the headline and the rest are its breakdown.
     for i, (x, value, column) in enumerate(zip(xs, values, columns)):
-        ax.text(x, column[3] + 3, f"{value:.0f}%", ha="center", va="bottom",
+        ax.text(x, column[3] + headroom, fmt(value), ha="center", va="bottom",
                 fontsize=10, color="#52514e",
                 fontweight="bold" if i == len(columns) - 1 else "normal")
-    ax.axhline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
+    if chance is not None:
+        ax.axhline(chance, linestyle="--", linewidth=1, color="#898781",
+                   label=f"Chance ({chance:.0f}%)")
     ax.set_xticks(xs)
     # A run stopped partway can leave a fold count with fewer models behind it
     # than the run as a whole - and a bar averaging three models next to one
@@ -579,14 +630,14 @@ def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
                   "whole run" if len(folds_seen) > 1 else
                   "Whole run (every model, every trial)",
                   color=LABEL_GRAY, fontsize=10)
-    ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
-    ax.set_title(f"Average accuracy of {display_name(experiment_name)} experiment",
+    ax.set_ylabel(ylabel, color=LABEL_GRAY, fontsize=10)
+    ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
-    ax.annotate(_average_note(rows, per_model),
+    ax.annotate(_average_note(rows, per_model, measure, fmt),
                 xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
                 textcoords="offset points", ha="center", va="bottom",
                 fontsize=9, color=LABEL_GRAY)
-    ax.set_ylim(0, 118)
+    ax.set_ylim(ylim or (0, top))
     if len(columns) == 1:
         ax.set_xlim(-1.0, 1.0)    # one bar, centred - not a wall across the panel
     else:
@@ -601,6 +652,50 @@ def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
     fig.legend(handles, labels, fontsize=9, loc="upper center",
                bbox_to_anchor=(0.5, 0.0), ncol=2, frameon=False)
     _finish(fig, ax, out, rotate_xticks=False)
+
+
+def plot_average_accuracy(rows, out: Path, experiment_name: str) -> None:
+    """The run's accuracy as one number - what changing the environment did."""
+    _plot_average(
+        rows, out, experiment_name,
+        measure=accuracy_of,
+        metric="Average accuracy",
+        ylabel="Accuracy (% of answers correct)",
+        fmt=lambda v: f"{v:.0f}%",
+        chance=20,
+        ylim=(0, 118),
+    )
+
+
+def plot_average_tokens(rows, out: Path, experiment_name: str) -> None:
+    """The run's token spend as one number - what changing the environment
+    cost.
+
+    The companion to average accuracy, and the one that says whether a change
+    was free. Made-up direction words that hold accuracy steady but double the
+    tokens didn't leave the models unbothered: they made them work harder for
+    the same answer, and this is the bar that shows it.
+    """
+    _plot_average(
+        rows, out, experiment_name,
+        measure=field_average("total_tokens"),
+        metric="Average token consumption",
+        ylabel="Average token consumption (total tokens per trial)",
+        fmt=lambda v: f"{v:,.0f}",
+    )
+
+
+def plot_average_time(rows, out: Path, experiment_name: str) -> None:
+    """The run's thinking time as one number - the wall-clock counterpart to
+    the token bill, and the one that moves when a model reasons longer without
+    that showing up as more output."""
+    _plot_average(
+        rows, out, experiment_name,
+        measure=field_average("elapsed_seconds"),
+        metric="Average response time",
+        ylabel="Average response time (seconds per trial)",
+        fmt=lambda v: f"{v:.2f}s",
+    )
 
 
 def _plot_accuracy_vs(rows, out: Path, experiment_name: str, *,
@@ -678,29 +773,27 @@ def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
     """Shared shape for the per-model cost charts (response time, token
     consumption): average ``field`` over each model's trials, drawn as
     horizontal bars so the figure stays a sane size however many models a
-    run has. Ranked so the value increases up the chart."""
-    by_model: dict[str, list[float]] = {}
-    for r in rows:
-        m = r.get("model_version", "unknown")
-        by_model.setdefault(m, []).append(float(r.get(field) or 0))
+    run has. Ranked so the value increases up the chart, with the run's
+    average as an extra bar on top - the same summary row the accuracy
+    ranking carries, so "is this model dear or cheap for this run" is
+    answerable without doing the arithmetic by eye."""
+    measure = field_average(field)
+    per_model = model_values(rows, measure)
+    xmax = max((v for _, v, _ in per_model), default=0) or 1.0
 
-    ranked = sorted(by_model.items(), key=lambda kv: sum(kv[1]) / len(kv[1]))
-    models = [m for m, _ in ranked]
-    averages = [sum(v) / len(v) for _, v in ranked]
-    colors_map = model_color_map(rows)
-    colors = [colors_map[m] for m in models]
-    xmax = max(averages, default=0) or 1.0
-
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * len(models) + 1)))
-    bars = ax.barh(models, averages, color=colors)
-    for bar, v in zip(bars, averages):
-        ax.text(bar.get_width() + 0.01 * xmax, bar.get_y() + bar.get_height() / 2,
-                fmt(v), va="center", fontsize=9, color="#52514e")
+    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 2) + 1)))
+    _draw_ranked_with_average(ax, per_model, model_color_map(rows),
+                              fmt=fmt, label_pad=0.01 * xmax)
     ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
+    ax.annotate(_average_note(rows, per_model, measure, fmt),
+                xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
+                textcoords="offset points", ha="center", va="bottom",
+                fontsize=9, color=LABEL_GRAY)
     ax.set_xlim(0, 1.15 * xmax)
+    ax.legend(fontsize=9, loc="lower right")
     _finish(fig, ax, out, rotate_xticks=False)
 
 
@@ -740,6 +833,8 @@ def build_all_plots(rows, plots_dir: Path, slug: str) -> None:
         "accuracy_by_folds": plot_accuracy_by_folds,
         "accuracy_by_model": plot_accuracy_by_model,
         "average_accuracy": plot_average_accuracy,
+        "average_tokens": plot_average_tokens,
+        "average_time": plot_average_time,
         "accuracy_vs_tokens": plot_accuracy_vs_tokens,
         "accuracy_vs_time": plot_accuracy_vs_time,
         "elapsed_time_by_model": plot_elapsed_time_by_model,
