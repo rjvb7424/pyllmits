@@ -64,7 +64,7 @@ Already run something and want to pick up where you left off? The **"resume or e
 
 Three of those charts are built for comparing runs rather than models: **average accuracy**, **average token consumption** and **average response time**. Each is a single bar — the whole run boiled down to one number — with a thin line through it showing the spread it's hiding (lowest model to highest). Accuracy says whether the change worked; tokens and response time say what it cost, which is the part a pass/fail number hides: made-up direction words that leave accuracy untouched but double the tokens didn't leave the models unbothered, they just made them work harder for the same answer.
 
-The same average also appears as an extra bar on top of each "by model" ranking, so you can see at a glance which models sit above the run's average and which below. And if the run swept a fold range, every average graph adds a bar per fold count too — the difficulty trend as one averaged shape, instead of a dozen crossing lines.
+Those averages stay on their own graphs. The "by model" rankings show one bar per model and nothing else — the run's average is only marked there as a dashed line, so you can still see which models sit above it and which below without a summary bar taking a row in the ranking. And if the run swept a fold range, every average graph adds a bar per fold count too — the difficulty trend as one averaged shape, instead of a dozen crossing lines.
 
 ## 5 · Putting it to use
 

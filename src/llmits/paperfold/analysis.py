@@ -24,11 +24,11 @@ naming convention llmits.analysis.plots (Crafter's) already uses:
   * accuracy_by_folds_of_<name>.png     - accuracy vs number of folds
                                           (only for runs that swept more than
                                           one fold count)
-  * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst, with
-                                          the run's average as an extra bar
-  * average_accuracy_of_<name>.png      - that average on its own, the number
-                                          to carry between runs when comparing
-                                          two environments
+  * accuracy_by_model_of_<name>.png     - accuracy ranked best-to-worst, one
+                                          bar per model
+  * average_accuracy_of_<name>.png      - the run's average on its own, the
+                                          number to carry between runs when
+                                          comparing two environments
   * average_tokens_of_<name>.png        - the same one-bar summary for token
                                           spend: what the environment cost
   * average_time_of_<name>.png          - and for response time
@@ -38,8 +38,12 @@ naming convention llmits.analysis.plots (Crafter's) already uses:
   * tokens_by_model_of_<name>.png       - average token consumption per model
 
 The three average_* charts share one shape (_plot_average) and the three
-"by model" rankings share another (_draw_ranked_with_average), so a summary
-bar means the same thing wherever it appears.
+"by model" rankings share another (_draw_ranked_bars), so each family reads
+the same way whichever measure it is showing. The two are kept apart on
+purpose: a ranking answers "who is best here", an average answers "did
+changing the environment change anything", and the whole-run number only ever
+appears as a bar on the charts built for it. The rankings mark it as a
+reference line, which is all they need it for.
 """
 
 from __future__ import annotations
@@ -81,11 +85,10 @@ PLOT_KINDS = ("letter_distribution", "accuracy_by_folds", "accuracy_by_model",
               "elapsed_time_by_model", "tokens_by_model")
 
 # The average is a summary of the models, not one of them, so it's drawn in a
-# neutral gray that can't be mistaken for a provider's color family, and set
-# off from the ranked bars by a blank slot.
+# neutral gray that can't be mistaken for a provider's color family.
 AVERAGE_COLOR = "#6f6d69"
 AVERAGE_BREAKDOWN_COLOR = "#b6b4af"   # the per-fold-count bars it breaks into
-AVERAGE_GAP = 0.6                     # blank space between the models and it
+AVERAGE_GAP = 0.6                     # blank slot before the whole-run bar
 
 # Lines that land on the same accuracy (several models all at 100%, say) would
 # be drawn exactly on top of each other and only the last one painted would be
@@ -467,22 +470,20 @@ def _paper_size_summary(rows, folds_seen: list[int]) -> str:
 
 
 def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
-    """Accuracy broken down by model, ranked best-to-worst, with the run's
-    average as one more bar above them.
+    """Accuracy broken down by model, ranked best-to-worst - one bar per
+    model, and nothing else drawn as a bar.
 
-    The per-model ranking answers "who is best here". The average bar answers
-    the other question this experiment keeps being asked - "did changing the
-    environment change anything" - because flipping between two runs (real
-    direction names, then made-up ones) with a dozen-plus bars reshuffling
-    tells you far less than one summary number moving. It's kept visually
-    separate (gray, hatched, a blank slot below it) so it never reads as one
-    more model, and repeated as a dashed line down the ranked bars so you can
-    still see who sits above the average and who below.
+    This chart answers "who is best here". The other question this experiment
+    keeps being asked - "did changing the environment change anything" - is
+    average_accuracy's job, on its own graph, so the whole-run number is a
+    thing you compare between runs rather than a row inside a ranking. All
+    that survives here is the dashed line marking where that average falls,
+    so you can still see who sits above it and who below.
     """
     per_model = model_accuracies(rows)
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 2) + 1)))
-    average = _draw_ranked_with_average(ax, per_model, model_color_map(rows),
-                                        fmt=lambda v: f"{v:.0f}%", label_pad=1.5)
+    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 1) + 1)))
+    _draw_ranked_bars(ax, per_model, model_color_map(rows),
+                      fmt=lambda v: f"{v:.0f}%", label_pad=1.5)
     ax.axvline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
     ax.set_xlabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
@@ -497,44 +498,33 @@ def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
     _finish(fig, ax, out, rotate_xticks=False)
 
 
-def _draw_ranked_with_average(ax, per_model, colors_map, *, fmt, label_pad) -> float:
-    """Draw ranked horizontal bars with the run's average as one more bar
-    above them, and return that average.
+def _draw_ranked_bars(ax, per_model, colors_map, *, fmt, label_pad) -> float:
+    """Draw one ranked horizontal bar per model, mark the run's average as a
+    reference line, and return that average.
 
     Shared by every "by model" chart here (accuracy, tokens, response time),
-    so the summary row looks and means the same thing on all of them. The
-    average is kept visually separate - gray, hatched, a blank slot below it -
-    so it never reads as one more model, and repeated as a dashed line down
-    the ranked bars so you can still see who sits above it and who below.
+    so a ranking reads the same way whichever measure it shows. The average is
+    a line and not a bar on purpose: as a bar it took a row in the ranking and
+    read as one more model, and the whole-run number already has a graph of
+    its own (average_accuracy and its two companions) built for comparing runs
+    to each other. Here it only needs to answer "above or below average", and
+    a line does that without competing with the models.
     """
     models = [m for m, _, _ in per_model]
     values = [v for _, v, _ in per_model]
     average = macro_average(values)
 
-    # Numeric y positions rather than the model names themselves: the average
-    # needs a slot of its own with a gap under it, which categorical bars
-    # (evenly spaced, one per label) can't leave room for.
     ys = list(range(len(models)))
-    average_y = len(models) + AVERAGE_GAP
-
     bars = ax.barh(ys, values, color=[colors_map[m] for m in models])
-    average_bar = ax.barh([average_y], [average], color=AVERAGE_COLOR,
-                          hatch="//", edgecolor="white", linewidth=0)
     for bar, value in zip(bars, values):
         ax.text(bar.get_width() + label_pad, bar.get_y() + bar.get_height() / 2,
                 fmt(value), va="center", fontsize=9, color="#52514e")
-    ax.text(average_bar[0].get_width() + label_pad,
-            average_bar[0].get_y() + average_bar[0].get_height() / 2,
-            fmt(average), va="center", fontsize=9, color="#52514e",
-            fontweight="bold")
-    ax.set_yticks(ys + [average_y])
-    ax.set_yticklabels(models + [f"Average (all {len(models)} models)"])
-    ax.get_yticklabels()[-1].set_fontweight("bold")
+    ax.set_yticks(ys)
+    ax.set_yticklabels(models)
     # A longer dash than the chance line's: the two sit in the same gray family
-    # (the average line matches the average bar on purpose) and would otherwise
-    # be hard to tell apart where they fall close together.
+    # and would otherwise be hard to tell apart where they fall close together.
     ax.axvline(average, linestyle=(0, (6, 3)), linewidth=1.2, color=AVERAGE_COLOR,
-               label=f"Average ({fmt(average)})")
+               label=f"Average of all {len(models)} models ({fmt(average)})")
     return average
 
 
@@ -774,16 +764,17 @@ def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
     consumption): average ``field`` over each model's trials, drawn as
     horizontal bars so the figure stays a sane size however many models a
     run has. Ranked so the value increases up the chart, with the run's
-    average as an extra bar on top - the same summary row the accuracy
-    ranking carries, so "is this model dear or cheap for this run" is
-    answerable without doing the arithmetic by eye."""
+    average marked as a line - the same reference the accuracy ranking
+    carries, so "is this model dear or cheap for this run" is answerable
+    without doing the arithmetic by eye. The average as a figure in its own
+    right belongs to average_tokens/average_time, not here."""
     measure = field_average(field)
     per_model = model_values(rows, measure)
     xmax = max((v for _, v, _ in per_model), default=0) or 1.0
 
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 2) + 1)))
-    _draw_ranked_with_average(ax, per_model, model_color_map(rows),
-                              fmt=fmt, label_pad=0.01 * xmax)
+    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 1) + 1)))
+    _draw_ranked_bars(ax, per_model, model_color_map(rows),
+                      fmt=fmt, label_pad=0.01 * xmax)
     ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
