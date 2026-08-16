@@ -1,6 +1,6 @@
 # 🧩 Pyllmits Documentation & User Guide
 
-_Last updated: August 13, 2026_
+_Last updated: August 16, 2026_
 
 > 📓 This guide is also available as an interactive [Google Colab notebook](https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing).
 
@@ -16,7 +16,8 @@ Both experiments run through the same interface, so testing OpenAI, Gemini, and 
 2. [Adding your API keys](#2--adding-your-api-keys)
 3. [Testing a model in Crafter](#3--testing-a-model-in-crafter)
 4. [Testing a model with Paper Folding](#4--testing-a-model-with-paper-folding)
-5. [Putting it to use](#5--putting-it-to-use)
+5. [Comparing experiments](#5--comparing-experiments)
+6. [Putting it to use](#6--putting-it-to-use)
 
 ## 1 · Setup
 
@@ -66,8 +67,27 @@ Three of those charts are built for comparing runs rather than models: **average
 
 Those averages stay on their own graphs. The "by model" rankings show one bar per model and nothing else — the run's average is only marked there as a dashed line, so you can still see which models sit above it and which below without a summary bar taking a row in the ranking. And if the run swept a fold range, every average graph adds a bar per fold count too — the difficulty trend as one averaged shape, instead of a dozen crossing lines.
 
-## 5 · Putting it to use
+## 5 · Comparing experiments
+
+Every other tab looks inside one experiment. **Compare** looks between them, which is where the actual research question lives: the puzzle never changes, only what the four directions are called, so the gap between two runs *is* the finding.
+
+Tick two or more paper-folding runs, pick which one is the **baseline** — usually the run where north still means north — and press Compare. Everything on the page is then measured against that run.
+
+The one setting worth understanding is **scope**. "Compare like for like" (the default) trims every run to the models and fold counts they all have scored trials for, and says at the top exactly what that dropped. It matters more than it sounds: a run you stopped after five models, or one that swept 3-8 folds while the others sat at 3, would otherwise be compared through a completely different mixture underneath, and the difference you'd read off the bars would be that mixture rather than the wording. Switch it to "use everything each run has" when you want each run on its own terms.
+
+What comes out, top to bottom:
+
+- **Each run at a glance** — one card per run showing accuracy, tokens and seconds together, each with its change from the baseline. All three, because accuracy alone hides the case that matters most: a wording that scores the same but costs half as much again did not leave the models unbothered.
+- **What stands out** — the patterns written as sentences. How big each change was, whether it clears the noise floor (a run of forty trials per model has a 95% margin of about ±4 points, and the page refuses to call anything smaller a change), whether the whole field moved or one model did, whether a run cost more for the same score, which model is most and least sensitive to the wording, whether the leaderboard survived, and whether label length correlates with anything.
+- **Run by run** and **Every model, every run** — both sortable. The second is a heat grid you can flip between accuracy, tokens and seconds, and between raw values and change from the baseline. This is where patterns jump out: a row that stays flat across the columns is a model the wording never reached, a row that lurches is one whose answer was leaning on the words, and a whole column of one color is the field moving together.
+- **Charts** — thirteen of them, each captioned with what to look for. The headline bars per measure, the models × runs heat maps, a slope chart (parallel lines mean the wording did the same thing to everyone; crossing lines mean it didn't), a sensitivity ranking, accuracy-against-cost scatters with an arrow from the baseline to each run, label length against both measures, difficulty curves when a run swept folds, and the answer-letter distribution.
+
+**Download CSV** gives you the whole thing long-form — a row per model per run plus run totals — for a notebook or a spreadsheet. **Download all charts** puts every PNG in one folder in your Downloads.
+
+## 6 · Putting it to use
 
 The point of all this is comparison: run the same setup against several models at once, and the graphs show you who's actually good at this versus who just talks a good game. Because everything (results, graphs, replays) is saved to disk the moment it's produced, you can walk away mid-run, come back later, add a model you forgot, or push the trial count higher — and pick up exactly where you left off instead of starting over.
 
 The Paper Folding side pushes that comparison one step further, in two directions. Run it once with real direction names, once with random placeholder words, and compare the two: a big drop in accuracy between them is the clearest signal you'll get that a model's "spatial reasoning" was leaning on the words themselves, not the geometry. That comparison is what the **average** graphs are for — one bar per run, so the difference between two setups is a number that moved rather than a dozen bars you have to re-read every time. Read the three together: accuracy holding steady while tokens and response time climb is still a result, and the opposite of "the wording made no difference". Check the spread line before believing any of them, though: an average that fell because every model fell is a real effect of the wording, while one that fell because a single model collapsed is a fact about that model. And run it across a fold range instead of one fixed difficulty: where each model's curve leaves the chance line tells you how much folding it can actually hold in its head, which a single accuracy number never will.
+
+Once you have more than two of those runs, stop carrying the numbers between graphs by hand and let **Compare** do it — that's the whole reason it exists. Reading five wordings off five separate sets of average bars means holding five numbers in your head and hoping they were computed over the same models; the Compare page puts them in one table, works out every difference against a baseline you choose, and refuses to call a difference real until it clears the noise in the trial counts you actually ran.

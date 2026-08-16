@@ -320,6 +320,84 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .model .trials-pill{font:11px var(--mono);color:var(--muted);border:1px solid var(--line2);
     border-radius:999px;padding:1px 7px}
 
+  /* ---- Compare tab ----------------------------------------------------
+     Its own vocabulary, because it is the one page whose job is difference
+     rather than value: --up/--down are "the measure moved the way you wanted"
+     and "it didn't", never literally up and down, so accuracy rising and
+     tokens rising can be colored honestly by the same two tokens. */
+  #tab-compare{--up:#3fb27f; --down:#e0716b; --flat:var(--muted)}
+  .cmp-runs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--s3)}
+  .cmp-run{display:flex;gap:var(--s3);align-items:flex-start;background:var(--raised);
+    border:1px solid var(--line);border-radius:var(--radius-lg);padding:var(--s3) var(--s4);
+    cursor:pointer;transition:border-color .12s,background .12s}
+  .cmp-run:hover{border-color:var(--line2)}
+  .cmp-run.on{border-color:var(--accent);background:rgba(232,134,60,.08)}
+  .cmp-run input{width:18px;height:18px;min-height:0;margin-top:3px;flex-shrink:0;accent-color:var(--accent)}
+  .cmp-run .n{font-weight:600;font-size:14px;word-break:break-word}
+  .cmp-run .m{color:var(--muted);font-size:12px;margin-top:3px;font-family:var(--mono)}
+  .cmp-run .labels{color:var(--faint);font-size:11.5px;margin-top:5px;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+  /* Headline cards: one per non-baseline run, each answering "what did this
+     wording do" in the three measures at once. */
+  .cmp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--s3)}
+  .cmp-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:var(--s4);border-top:3px solid var(--line2)}
+  .cmp-card.base{border-top-color:var(--faint)}
+  .cmp-card .t{font-weight:600;font-size:14px;word-break:break-word;min-height:38px}
+  .cmp-card .kindpill{margin-top:var(--s2)}
+  .cmp-card .metrics{display:flex;flex-direction:column;gap:6px;margin-top:var(--s3)}
+  .cmp-card .metric{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s2);
+    font-family:var(--mono);font-size:13px}
+  .cmp-card .metric .k{color:var(--muted);font-size:11.5px;font-family:var(--ui)}
+  .cmp-card .metric .d{font-size:12px;font-weight:600}
+  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
+
+  /* Tables (summary + per-model matrix) share one look: sticky header, sticky
+     first column, and horizontal scroll inside the card rather than across the
+     page - seventeen models by six runs does not fit any screen. */
+  .cmp-scroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:var(--radius)}
+  table.cmp{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+  table.cmp th,table.cmp td{padding:7px 10px;text-align:right;white-space:nowrap;
+    border-bottom:1px solid var(--line)}
+  table.cmp th{background:var(--raised);color:var(--muted);font:600 11.5px var(--ui);
+    text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:2;
+    border-bottom:1px solid var(--line2);cursor:pointer;user-select:none}
+  table.cmp th:hover{color:var(--text)}
+  table.cmp th.nosort{cursor:default}
+  table.cmp th.sorted::after{content:' \25BC';font-size:9px}
+  table.cmp th.sorted.asc::after{content:' \25B2'}
+  table.cmp td.name,table.cmp th.name{text-align:left;position:sticky;left:0;background:var(--surface);
+    z-index:1;font-family:var(--mono);font-size:12px;max-width:260px;overflow:hidden;
+    text-overflow:ellipsis}
+  table.cmp th.name{background:var(--raised);z-index:3}
+  table.cmp tbody tr:hover td{background:#1c212a}
+  table.cmp tbody tr:hover td.name{background:#1c212a}
+  table.cmp td.base{box-shadow:inset 2px 0 0 var(--faint)}
+  table.cmp .sub-v{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  /* Heat cells: the color carries the shape of the grid, the number carries the
+     value - never only one of the two, so the matrix stays readable to anyone
+     who can't separate the reds from the greens. */
+  .heat{font-family:var(--mono);font-weight:600}
+  .cmp-legend{display:flex;gap:var(--s4);flex-wrap:wrap;align-items:center;
+    color:var(--muted);font-size:12px;margin-top:var(--s3)}
+  .cmp-legend .swatches{display:flex;gap:2px}
+  .cmp-legend .sw{width:22px;height:12px;border-radius:2px}
+
+  /* Findings: the page's written half. Each one is a claim with its evidence,
+     colored only by which way the measure moved. */
+  .finding{border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:var(--radius);
+    padding:var(--s3) var(--s4);margin-bottom:var(--s2);background:var(--raised)}
+  .finding.good{border-left-color:var(--up)}
+  .finding.bad{border-left-color:var(--down)}
+  .finding.warn{border-left-color:var(--accent)}
+  .finding.note{border-left-color:var(--info)}
+  .finding .ft{font-weight:600;font-size:14px;margin-bottom:3px}
+  .finding .fx{color:var(--muted);font-size:13px;line-height:1.5}
+  .cmp-plots>figure{margin:0 0 var(--s6);text-align:center}
+  .cmp-plots figcaption{color:var(--muted);font-size:12.5px;margin-top:var(--s2);
+    max-width:760px;margin-left:auto;margin-right:auto;line-height:1.5}
+
   @media (max-width:768px){
     header{padding:var(--s3) var(--s4)} main{padding:var(--s4)}
     .card{padding:var(--s4)} nav{margin-left:0}
@@ -466,6 +544,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <button class="tab" data-tab="graphs" role="tab">Graphs</button>
     <button class="tab" data-tab="videos" role="tab">Videos</button>
     <button class="tab" data-tab="paperfold" role="tab">Paper Folding</button>
+    <button class="tab" data-tab="compare" role="tab">Compare</button>
     <button class="tab" data-tab="providers" role="tab">Providers</button>
   </nav>
   <div style="flex:1"></div>
@@ -713,6 +792,51 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
+  <!-- COMPARE - paper-folding runs against each other. Every other tab looks
+       inside one experiment; this one looks between them, which is where the
+       actual research question lives: the puzzle never changes, only what the
+       four directions are called, so the gap between two runs is the finding. -->
+  <section id="tab-compare" class="hidden">
+    <div class="between" style="margin-bottom:var(--s4)">
+      <div><h2>Compare</h2><div class="sub">Put paper-folding runs side by side: accuracy, token spend and thinking time, per run and per model. Pick two or more runs, choose which one is the baseline, and everything below is measured against it.</div></div>
+    </div>
+
+    <div class="card"><h3>Runs to compare</h3>
+      <div class="sub" style="margin-bottom:var(--s4)">Tick the runs you want on the page. The order you tick them in is the order every chart reads, left to right.</div>
+      <div class="flex" style="margin-bottom:var(--s3)">
+        <button class="btn-secondary btn-sm" onclick="cmpSelectAll(true)">Select all</button>
+        <button class="btn-secondary btn-sm" onclick="cmpSelectAll(false)">Clear</button>
+        <span class="pill" id="cmpCount">0 selected</span>
+      </div>
+      <div id="cmpRunList"></div>
+
+      <div class="row" style="margin-top:var(--s4);max-width:840px">
+        <div>
+          <label for="cmpBaseline">Baseline (everything is measured against this run)</label>
+          <select id="cmpBaseline" onchange="cmpMaybeRerun()"></select>
+        </div>
+        <div>
+          <label for="cmpRestrict">Scope</label>
+          <select id="cmpRestrict" onchange="cmpMaybeRerun()">
+            <option value="1">Compare like for like (only shared models and folds)</option>
+            <option value="0">Use everything each run has</option>
+          </select>
+        </div>
+      </div>
+      <div class="sub" id="cmpScopeHint">Like for like trims every run to the models and fold counts they all have in common, so a run that stopped early - or one that swept extra folds - can't tilt the comparison with a different mixture underneath it.</div>
+
+      <div class="flex" style="margin-top:var(--s4)">
+        <button class="btn-primary" id="cmpRunBtn" onclick="cmpRun()">&#8635;&nbsp;Compare</button>
+        <button class="btn-secondary" id="cmpCsvBtn" onclick="cmpDownloadCsv()" disabled
+          title="Every number on this page as a CSV: one row per model per run, plus the run totals">Download CSV</button>
+        <button class="btn-secondary" id="cmpDownloadAllBtn" onclick="cmpDownloadAllGraphs()" disabled
+          title="Saves every comparison chart into one folder in your Downloads">Download all charts</button>
+      </div>
+    </div>
+
+    <div id="cmpBody"></div>
+  </section>
+
   <!-- PROVIDERS -->
   <section id="tab-providers" class="hidden">
     <div class="between" style="margin-bottom:var(--s4)">
@@ -778,9 +902,9 @@ function toast(msg,kind){const t=document.createElement('div');t.className='toas
   $('toasts').appendChild(t);
   if(kind!='err')setTimeout(()=>t.remove(),3200);}
 function go(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==t));
-  ['configs','editor','run','graphs','videos','paperfold','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
+  ['configs','editor','run','graphs','videos','paperfold','compare','providers'].forEach(s=>$('tab-'+s).classList.toggle('hidden',s!=t));
   if(t=='configs')loadConfigs(); if(t=='graphs')loadRuns(); if(t=='videos')loadRuns(); if(t=='run')loadRunConfigs();
-  if(t=='providers')loadEnvStatus(); if(t=='paperfold')pfLoadRuns();}
+  if(t=='providers')loadEnvStatus(); if(t=='paperfold')pfLoadRuns(); if(t=='compare')cmpLoadRuns();}
 document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>go(x.dataset.tab));
 
 function defaultConfig(){return {
@@ -1772,6 +1896,460 @@ async function pfDeleteRun(selectId){
   toast('Deleted run '+name,'ok');
   if($('pfSetupPick').value==name||PF_LOADED_NAME==name)pfResetSetup();
   await pfLoadRuns(); pfShowRun();
+}
+
+// ---------- Compare: paper-folding runs against each other ----------
+// The Paper Folding tab answers "which model is best in this run". This one
+// answers "what did changing the prompt do", which needs whole runs put beside
+// each other rather than models inside one. Everything numeric is worked out
+// server-side (paperfold/comparison.py) so the tables here and the charts it
+// draws can never disagree; this file only decides how it is laid out and what
+// is comparable to what by eye.
+let CMP_RUNS=[];             // every paper-folding run on disk
+let CMP_PICKED=[];           // the names ticked, in the order they were ticked
+let CMP=null;                // the last summary the server sent back
+let CMP_METRIC='accuracy';   // which measure the per-model matrix is showing
+let CMP_MODE='delta';        // 'value' (raw numbers) or 'delta' (vs baseline)
+let CMP_SORT={table:null,col:null,asc:false};
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cmpNice=n=>String(n).replace(/_/g,' ').trim();
+
+// Formatting mirrors comparison.MEASURES exactly - same rounding, same units -
+// so a number read off this page and the same number read off a chart are the
+// same number, not two roundings of it.
+const CMP_FMT={
+  accuracy:v=>v==null?'–':v.toFixed(0)+'%',
+  tokens:v=>v==null?'–':Math.round(v).toLocaleString(),
+  time:v=>v==null?'–':v.toFixed(1)+'s',
+};
+const CMP_DFMT={
+  accuracy:d=>(d>=0?'+':'')+d.toFixed(1)+' pp',
+  tokens:d=>(d>=0?'+':'')+Math.round(d).toLocaleString(),
+  time:d=>(d>=0?'+':'')+d.toFixed(1)+'s',
+};
+const CMP_HIGHER_BETTER={accuracy:true,tokens:false,time:false};
+// Whether a change was in the direction you wanted, which is not the same as
+// whether the number went up: more accuracy is a win, more tokens is a bill.
+function cmpDir(delta,metric){
+  if(delta==null||Math.abs(delta)<0.05)return 'flat';
+  return (delta>0)==CMP_HIGHER_BETTER[metric]?'up':'down';
+}
+function cmpDeltaHtml(delta,metric,pct){
+  if(delta==null)return '<span class="flat">–</span>';
+  const cls=cmpDir(delta,metric);
+  const extra=(pct!=null&&metric!='accuracy'&&isFinite(pct))?` (${pct>=0?'+':''}${pct.toFixed(0)}%)`:'';
+  return `<span class="${cls}">${esc(CMP_DFMT[metric](delta))}${extra}</span>`;
+}
+
+async function cmpLoadRuns(){
+  const r=await api('/api/paperfold/runs');
+  CMP_RUNS=r.runs||[];
+  // Drop anything ticked that has since been deleted, so a stale name can't
+  // sit in the selection waiting to fail the next Compare.
+  CMP_PICKED=CMP_PICKED.filter(n=>CMP_RUNS.some(x=>x.name==n));
+  cmpRenderRunList(); cmpSyncControls();
+  if(!CMP)$('cmpBody').innerHTML='<div class="empty"><b>Nothing compared yet</b>'
+    +'Tick two or more runs above and press Compare. Start with the run whose direction '
+    +'names were left alone as the baseline, and the rest read as what each change did to it.</div>';
+}
+// Changing the baseline or the scope redraws a comparison that already exists,
+// but doesn't start one - those two controls sit above the Compare button, and
+// touching them before picking any runs shouldn't fire off a request.
+function cmpMaybeRerun(){ if(CMP)cmpRun(); }
+
+function cmpRenderRunList(){
+  const el=$('cmpRunList');
+  if(!CMP_RUNS.length){
+    el.innerHTML='<div class="empty"><b>No paper-folding runs yet</b>Run something on the Paper Folding tab first - this page compares finished runs against each other.</div>';
+    return;
+  }
+  el.innerHTML='<div class="cmp-runs">'+CMP_RUNS.map(r=>{
+    const on=CMP_PICKED.includes(r.name);
+    const folds=r.fold_min==r.fold_max?`${r.fold_min} folds`:`${r.fold_min}-${r.fold_max} folds`;
+    const mode={real:'real names',fixed:'custom words',random:'random words'}[r.direction_mode]||r.direction_mode;
+    const labels=r.direction_labels
+      ? 'north = '+(r.direction_labels.north||'?')
+      : (r.direction_mode=='random'?'a fresh set of words every trial':'north means north');
+    return `<label class="cmp-run${on?' on':''}" data-run="${esc(r.name)}">
+      <input type="checkbox" ${on?'checked':''} data-run="${esc(r.name)}" onchange="cmpToggleRun(this.dataset.run)">
+      <div style="min-width:0">
+        <div class="n">${esc(cmpNice(r.name))}</div>
+        <div class="m">${esc(mode)} · ${esc(folds)} · ${r.models.length} model${r.models.length==1?'':'s'} · ${r.num_trials??'?'} trials each</div>
+        <div class="labels">${esc(labels)}</div>
+      </div></label>`;
+  }).join('')+'</div>';
+}
+
+function cmpToggleRun(name){
+  const i=CMP_PICKED.indexOf(name);
+  if(i<0)CMP_PICKED.push(name); else CMP_PICKED.splice(i,1);
+  cmpRenderRunList(); cmpSyncControls();
+}
+function cmpSelectAll(on){
+  CMP_PICKED=on?CMP_RUNS.map(r=>r.name):[];
+  cmpRenderRunList(); cmpSyncControls();
+}
+function cmpSyncControls(){
+  const n=CMP_PICKED.length;
+  $('cmpCount').textContent=n+' selected';
+  // The baseline has to be one of the ticked runs, and keeping whichever was
+  // already chosen (when it survives) means re-ticking a run doesn't silently
+  // move the thing everything else is measured against.
+  const prev=$('cmpBaseline').value;
+  $('cmpBaseline').innerHTML=CMP_PICKED.map(x=>`<option value="${esc(x)}">${esc(cmpNice(x))}</option>`).join('');
+  $('cmpBaseline').value=CMP_PICKED.includes(prev)?prev:(CMP_PICKED[0]||'');
+  $('cmpRunBtn').disabled=n<2;
+  $('cmpRunBtn').title=n<2?'Tick at least two runs to compare':'';
+}
+
+async function cmpRun(){
+  if(CMP_PICKED.length<2){toast('Tick at least two runs to compare','err');return;}
+  const btn=$('cmpRunBtn'); btn.disabled=true;
+  $('cmpBody').innerHTML='<div class="empty">Comparing '+CMP_PICKED.length+' runs and drawing the charts&hellip;</div>';
+  try{
+    const r=await api('/api/paperfold/compare','POST',{
+      runs:CMP_PICKED, baseline:$('cmpBaseline').value,
+      restrict:$('cmpRestrict').value=='1', plots:true});
+    if(!r.ok){
+      CMP=null; cmpSyncButtons();
+      $('cmpBody').innerHTML=`<div class="empty"><b>Nothing to compare</b>${esc(r.error||'unknown error')}</div>`;
+      return;
+    }
+    CMP=r; CMP_SORT={table:null,col:null,asc:false};
+    cmpRender(); cmpSyncButtons();
+  } finally { btn.disabled=CMP_PICKED.length<2; }
+}
+function cmpSyncButtons(){
+  $('cmpCsvBtn').disabled=!CMP;
+  $('cmpDownloadAllBtn').disabled=!(CMP&&CMP.plots&&CMP.plots.length);
+}
+
+// ---------- Compare: rendering ----------
+function cmpRender(){
+  $('cmpBody').innerHTML=
+    cmpScopeCard()+cmpCardsSection()+cmpFindingsSection()+
+    cmpSummarySection()+cmpMatrixSection()+cmpPlotsSection();
+  cmpBindSort();
+}
+
+function cmpScopeCard(){
+  const s=CMP.scope, base=CMP.runs.find(r=>r.name==CMP.baseline);
+  const folds=s.folds_used.length?s.folds_used.join(', '):'none in common';
+  const droppedFolds=Object.entries(s.folds_dropped||{});
+  let notes='';
+  if(s.models_dropped.length)
+    notes+=`<div class="sub"><b>${s.models_dropped.length} model${s.models_dropped.length==1?'':'s'} left out</b> - not every selected run has scored trials for ${esc(s.models_dropped.slice(0,4).join(', '))}${s.models_dropped.length>4?', …':''}. Averages here cover only the models all of these runs share.</div>`;
+  if(droppedFolds.length)
+    notes+=`<div class="sub"><b>Fold counts left out</b> - ${droppedFolds.map(([n,f])=>esc(cmpNice(n))+' also ran at '+f.join(', ')+' folds').join('; ')}. Those trials are excluded everywhere except the difficulty-curve chart, which is the one place the fold count is the point.</div>`;
+  return `<div class="card">
+    <h3>What is being compared</h3>
+    <div class="sub" style="margin-bottom:var(--s3)">
+      ${CMP.runs.length} runs · baseline <b>${esc(cmpNice(CMP.baseline))}</b> ·
+      ${s.models_used.length} model${s.models_used.length==1?'':'s'} ·
+      ${folds==('none in common')?'no shared fold count':folds+' fold'+(s.folds_used.length==1?'':'s')} ·
+      ${CMP.restricted?'like for like':'each run on everything it has'}
+    </div>
+    ${notes||'<div class="sub">Every selected run has the same models and the same fold counts, so nothing had to be left out.</div>'}
+    <div class="sub">Baseline accuracy is ${esc(CMP_FMT.accuracy(base.metrics.accuracy.value))} with a 95% margin of about ±${base.accuracy_ci.toFixed(1)} points. Differences smaller than that are noise.</div>
+  </div>`;
+}
+
+function cmpCardsSection(){
+  const base=CMP.runs.find(r=>r.name==CMP.baseline);
+  const cards=CMP.runs.map(r=>{
+    const isBase=r.name==CMP.baseline;
+    const metrics=['accuracy','tokens','time'].map(k=>{
+      const v=r.metrics[k].value, d=v-base.metrics[k].value;
+      const pct=base.metrics[k].value?100*d/base.metrics[k].value:null;
+      return `<div class="metric"><span class="k">${k=='accuracy'?'Accuracy':k=='tokens'?'Tokens / trial':'Seconds / trial'}</span>
+        <span>${esc(CMP_FMT[k](v))} <span class="d">${isBase?'<span class="flat">baseline</span>':cmpDeltaHtml(d,k,pct)}</span></span></div>`;
+    }).join('');
+    const dir=isBase?'flat':cmpDir(r.metrics.accuracy.value-base.metrics.accuracy.value,'accuracy');
+    return `<div class="cmp-card${isBase?' base':''}" style="${isBase?'':'border-top-color:var(--'+(dir=='flat'?'line2':dir)+')'}">
+      <div class="t">${esc(cmpNice(r.name))}</div>
+      <div class="kindpill"><span class="pill${isBase?'':' accent'}">${esc(r.label.kind)}</span></div>
+      <div class="metrics">${metrics}</div>
+      <div class="sub" style="font-size:11.5px">${r.model_count} models · ${r.trials.toLocaleString()} scored trials · spread ${esc(CMP_FMT.accuracy(r.metrics.accuracy.min))}–${esc(CMP_FMT.accuracy(r.metrics.accuracy.max))}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card"><h3>Each run at a glance</h3>
+    <div class="sub" style="margin-bottom:var(--s4)">The three measures together. Accuracy alone hides the case that matters most: a wording that scores the same but costs half as much again did not leave the models unbothered.</div>
+    <div class="cmp-cards">${cards}</div></div>`;
+}
+
+function cmpFindingsSection(){
+  return `<div class="card"><h3>What stands out</h3>
+    <div class="sub" style="margin-bottom:var(--s4)">Read straight off the numbers above: how big each change was, whether it clears the noise floor, and whether the whole field moved or one model did.</div>
+    ${CMP.findings.map(f=>`<div class="finding ${esc(f.kind)}">
+      <div class="ft">${esc(f.title)}</div><div class="fx">${esc(f.text)}</div></div>`).join('')}</div>`;
+}
+
+function cmpSummarySection(){
+  const base=CMP.runs.find(r=>r.name==CMP.baseline);
+  const head=['Run','Wording','Words','Models','Trials','Accuracy','vs base','Tokens','vs base','Time','vs base','Letter skew'];
+  const rows=CMP.runs.map(r=>{
+    const d=k=>r.metrics[k].value-base.metrics[k].value;
+    const pct=k=>base.metrics[k].value?100*d(k)/base.metrics[k].value:null;
+    const isBase=r.name==CMP.baseline;
+    return {sort:[cmpNice(r.name),r.label.kind,r.label.words,r.model_count,r.trials,
+                  r.metrics.accuracy.value,d('accuracy'),r.metrics.tokens.value,d('tokens'),
+                  r.metrics.time.value,d('time'),r.letters.skew],
+      html:`<tr>
+      <td class="name${isBase?' base':''}" title="${esc(r.name)}">${esc(cmpNice(r.name))}${isBase?' <span class="pill">baseline</span>':''}</td>
+      <td style="text-align:left">${esc(r.label.kind)}</td>
+      <td>${r.label.words.toFixed(0)}</td>
+      <td>${r.model_count}</td>
+      <td>${r.trials.toLocaleString()}</td>
+      <td>${esc(CMP_FMT.accuracy(r.metrics.accuracy.value))}<div class="sub-v">${esc(CMP_FMT.accuracy(r.metrics.accuracy.min))}–${esc(CMP_FMT.accuracy(r.metrics.accuracy.max))}</div></td>
+      <td>${isBase?'<span class="flat">–</span>':cmpDeltaHtml(d('accuracy'),'accuracy')}</td>
+      <td>${esc(CMP_FMT.tokens(r.metrics.tokens.value))}</td>
+      <td>${isBase?'<span class="flat">–</span>':cmpDeltaHtml(d('tokens'),'tokens',pct('tokens'))}</td>
+      <td>${esc(CMP_FMT.time(r.metrics.time.value))}</td>
+      <td>${isBase?'<span class="flat">–</span>':cmpDeltaHtml(d('time'),'time',pct('time'))}</td>
+      <td>${r.letters.skew.toFixed(0)}%<div class="sub-v">${esc(r.letters.top_letter)} ${r.letters.top_share.toFixed(0)}%</div></td></tr>`};
+  });
+  return `<div class="card"><h3>Run by run</h3>
+    <div class="sub" style="margin-bottom:var(--s4)">Click any column to sort. "Letter skew" is how far the answers drifted from an even spread across A-E - a run leaning hard on one letter has stopped answering the puzzle and started guessing.</div>
+    ${cmpTable('summary',head,rows)}</div>`;
+}
+
+function cmpMatrixSection(){
+  const metric=CMP_METRIC, base=CMP.runs.find(r=>r.name==CMP.baseline);
+  const delta=CMP_MODE=='delta';
+  const cell=(r,m)=>{
+    const v=r.per_model[m]?r.per_model[m][metric]:null;
+    if(v==null)return null;
+    if(!delta)return v;
+    const b=base.per_model[m]?base.per_model[m][metric]:null;
+    if(b==null)return null;
+    return metric=='accuracy'?v-b:(b?100*(v-b)/b:null);
+  };
+  // One pass to fix the color scale, so a shade means the same thing in every
+  // column. In change mode the scale stops at the 90th percentile of the
+  // changes rather than the largest one: a single model that spent four times
+  // what it did on the baseline would otherwise set the contrast for the whole
+  // grid and leave every other cell the same washed-out neutral. Values past it
+  // share the end shade and are still printed in full. The baseline's own
+  // column is left out of the calculation - it is zeros by construction.
+  let lo=Infinity, hi=-Infinity;
+  const mags=[];
+  CMP.models.forEach(m=>CMP.runs.forEach(r=>{
+    const v=cell(r,m); if(v==null)return;
+    lo=Math.min(lo,v); hi=Math.max(hi,v);
+    if(r.name!=CMP.baseline)mags.push(Math.abs(v));
+  }));
+  mags.sort((a,b)=>a-b);
+  const biggest=mags.length?mags[mags.length-1]:0;
+  const peak=(mags.length?mags[Math.min(mags.length-1,Math.floor(0.9*mags.length))]:0)||biggest;
+  const saturated=biggest>1.05*peak;
+
+  const head=['Model'].concat(CMP.runs.map(r=>cmpNice(r.name))).concat(['Swing']);
+  const rows=CMP.models.map(m=>{
+    const raw=CMP.runs.map(r=>r.per_model[m]?r.per_model[m][metric]:null).filter(v=>v!=null);
+    const swing=raw.length>1?Math.max(...raw)-Math.min(...raw):null;
+    const tds=CMP.runs.map(r=>{
+      const v=cell(r,m), shown=r.per_model[m]?r.per_model[m][metric]:null;
+      if(shown==null)return '<td class="flat">–</td>';
+      // In change mode the baseline's own column would be a stripe of "+0.0"
+      // saying nothing, so it carries the starting value instead - the row then
+      // reads as "began here, then moved by this much, and this much".
+      if(delta&&r.name==CMP.baseline)
+        return `<td class="base heat flat" title="baseline">${esc(CMP_FMT[metric](shown))}</td>`;
+      const text=delta
+        ?(v==null?'–':(metric=='accuracy'?CMP_DFMT.accuracy(v):(v>=0?'+':'')+v.toFixed(0)+'%'))
+        :CMP_FMT[metric](shown);
+      return `<td class="heat${!delta&&r.name==CMP.baseline?' base':''}" style="background:${cmpHeat(v,{delta,metric,peak,lo,hi})}"
+        title="${esc(cmpNice(r.name))}: ${esc(CMP_FMT[metric](shown))}">${esc(text)}</td>`;
+    }).join('');
+    // Sort keys follow what each cell actually shows, so the baseline column -
+    // which shows starting values rather than a column of zeros - sorts by
+    // those values.
+    return {sort:[m].concat(CMP.runs.map(r=>{
+        const v=(delta&&r.name==CMP.baseline)
+          ? (r.per_model[m]?r.per_model[m][metric]:null) : cell(r,m);
+        return v==null?-Infinity:v;})).concat([swing==null?-Infinity:swing]),
+      html:`<tr><td class="name" title="${esc(m)}">${esc(m)}</td>${tds}
+        <td>${swing==null?'–':esc(CMP_FMT[metric](swing))}</td></tr>`};
+  });
+
+  const peakText=metric=='accuracy'?CMP_DFMT.accuracy(peak):Math.round(peak)+'%';
+  // The swatch strip always runs from the most negative change on the left to
+  // the most positive on the right, but green always means "the way you wanted"
+  // - so which end is which depends on the measure. More accuracy is a win;
+  // more tokens is a bill.
+  const leftEnd=CMP_HIGHER_BETTER[metric]?'worse':'better',
+        rightEnd=CMP_HIGHER_BETTER[metric]?'better':'worse';
+  const legend=delta
+    ?`<div class="cmp-legend"><span>Change against ${esc(cmpNice(CMP.baseline))}:</span>
+       <span class="swatches">${[-1,-0.6,-0.25,0,0.25,0.6,1].map(t=>
+         `<span class="sw" style="background:${cmpHeat(t*peak,{delta:true,metric,peak,lo,hi})}"></span>`).join('')}</span>
+       <span>${leftEnd} &larr; unchanged &rarr; ${rightEnd}${saturated
+         ?`, colour running out at ${esc(peakText)} - bigger changes share the end shade, so read those cells' numbers`
+         :` (up to ${esc(peakText)})`}</span></div>`
+    :`<div class="cmp-legend"><span>${esc(metric=='accuracy'?'0% to 100% correct':'from '+CMP_FMT[metric](lo)+' to '+CMP_FMT[metric](hi))}</span></div>`;
+
+  return `<div class="card"><h3>Every model, every run</h3>
+    <div class="between" style="margin-bottom:var(--s3)">
+      <div class="sub" style="max-width:640px">A row that stays flat across the columns is a model the wording didn't reach. A row that lurches is one whose answer was leaning on the words - the puzzle underneath never changed. "Swing" is that row's lowest to highest, which is the same ranking the sensitivity chart draws.</div>
+      <div class="flex">
+        <select onchange="CMP_METRIC=this.value;cmpRender()" aria-label="Measure to show">
+          <option value="accuracy"${CMP_METRIC=='accuracy'?' selected':''}>Accuracy</option>
+          <option value="tokens"${CMP_METRIC=='tokens'?' selected':''}>Tokens per trial</option>
+          <option value="time"${CMP_METRIC=='time'?' selected':''}>Seconds per trial</option>
+        </select>
+        <select onchange="CMP_MODE=this.value;cmpRender()" aria-label="Values or change">
+          <option value="delta"${CMP_MODE=='delta'?' selected':''}>Change vs baseline</option>
+          <option value="value"${CMP_MODE=='value'?' selected':''}>Raw values</option>
+        </select>
+      </div>
+    </div>
+    ${cmpTable('matrix',head,rows)}
+    ${legend}</div>`;
+}
+
+// Cell shading. Two scales, both anchored so that "no color" means "nothing to
+// report": a change grid fades out at zero and deepens either side of it, a raw
+// grid runs from the lowest value on the page to the highest. Alpha over the
+// surface rather than solid fills, so the text on top stays the same readable
+// color in every cell instead of needing its own contrast rule.
+function cmpHeat(v,{delta,metric,peak,lo,hi}){
+  if(v==null)return 'transparent';
+  if(delta){
+    const m=peak?Math.min(1,Math.abs(v)/peak):0;
+    if(m<0.02)return 'transparent';
+    const good=(v>0)==CMP_HIGHER_BETTER[metric];
+    return `rgba(${good?'63,178,127':'224,113,107'},${(0.10+0.55*m).toFixed(3)})`;
+  }
+  if(metric=='accuracy'){
+    if(v<=20)return 'rgba(224,113,107,.42)';        // at or below the 20% chance line
+    return `rgba(63,178,127,${(0.08+0.50*Math.min(1,(v-20)/80)).toFixed(3)})`;
+  }
+  const span=(hi-lo)||1, t=Math.min(1,Math.max(0,(v-lo)/span));
+  return `rgba(232,134,60,${(0.06+0.44*t).toFixed(3)})`;   // more spend = warmer
+}
+
+// ---------- Compare: sortable tables ----------
+// Rows carry their own sort keys alongside their HTML, so sorting never has to
+// parse the numbers back out of the markup it just formatted.
+function cmpTable(id,head,rows){
+  const s=CMP_SORT.table==id?CMP_SORT:null;
+  if(s&&s.col!=null){
+    rows=rows.slice().sort((a,b)=>{
+      const x=a.sort[s.col],y=b.sort[s.col];
+      const c=(typeof x=='string'||typeof y=='string')
+        ?String(x).localeCompare(String(y)):(x-y);
+      return s.asc?c:-c;
+    });
+  }
+  const ths=head.map((h,i)=>{
+    const on=s&&s.col==i;
+    return `<th class="${i==0?'name ':''}${on?'sorted '+(s.asc?'asc':''):''}"
+      data-table="${id}" data-col="${i}">${esc(h)}</th>`;
+  }).join('');
+  return `<div class="cmp-scroll"><table class="cmp"><thead><tr>${ths}</tr></thead>
+    <tbody>${rows.map(r=>r.html).join('')}</tbody></table></div>`;
+}
+function cmpBindSort(){
+  document.querySelectorAll('#cmpBody table.cmp th[data-col]').forEach(th=>{
+    th.onclick=()=>{
+      const table=th.dataset.table, col=+th.dataset.col;
+      // First click on a column sorts it descending (biggest first, which is
+      // what you want from every column here); clicking the same one again
+      // flips it.
+      CMP_SORT=(CMP_SORT.table==table&&CMP_SORT.col==col)
+        ? {table,col,asc:!CMP_SORT.asc} : {table,col,asc:false};
+      cmpRender();
+    };
+  });
+}
+
+// ---------- Compare: charts ----------
+// Each chart gets a caption saying what to look for in it - the charts are
+// worth nothing if it isn't obvious which question each one answers.
+const CMP_CAPTIONS={
+  'accuracy_by_experiment.png':'The headline. One bar per run, with the line through it showing how far apart the best and worst models were - an average that moved because every model moved is a fact about the wording, one that moved because a single model collapsed is not.',
+  'tokens_by_experiment.png':'What each wording cost in tokens. Read it next to the accuracy bars: same score for more tokens still means the models had to work harder.',
+  'time_by_experiment.png':'The same in wall-clock seconds - the one that moves when a model reasons for longer without producing more text.',
+  'accuracy_matrix.png':'Every model against every run. Look for whole rows that go dark (a model the wording broke) and whole columns that do (a wording that broke everyone).',
+  'accuracy_change_matrix.png':'The same grid as change from the baseline. Green gained, red lost; a column of one color is the field moving together.',
+  'tokens_change_matrix.png':'What that change cost per model. A red column here beside a colorless one in the chart above is the "paid more, got nothing" case.',
+  'model_slopes.png':'One line per model. Parallel lines mean the wording did the same thing to everybody; lines that cross mean it suits some models and not others, and those need different follow-ups.',
+  'sensitivity_by_model.png':'Ranked by how much each model swung across the whole selection. Top of this chart is where the words were doing the work; the bottom is what reading the geometry looks like.',
+  'accuracy_vs_tokens_by_experiment.png':'Accuracy against token spend, with an arrow from the baseline to each run. Straight up bought accuracy, straight right only bought a bill.',
+  'accuracy_vs_time_by_experiment.png':'The same trade-off measured in seconds rather than tokens.',
+  'label_complexity.png':'Both measures against how many words each direction name was given. Bigger markers mean the labels themselves contained real direction words, which tests interference rather than unfamiliarity.',
+  'accuracy_by_folds_by_experiment.png':'Difficulty curves, one per run, models averaged. The only chart that keeps each run’s full fold range - where a line reaches the chance level is how much folding that wording could carry.',
+  'letter_bias_by_experiment.png':'Which of the five letters the answers went to. Answers piling onto one letter are a fallback, not a wrong answer to the puzzle.',
+};
+function cmpPlotsSection(){
+  if(!CMP.plots||!CMP.plots.length)
+    return '<div class="card"><h3>Charts</h3><div class="empty">No charts were produced for this selection.</div></div>';
+  const bust=Date.now();
+  return `<div class="card"><h3>Charts</h3>
+    <div class="sub" style="margin-bottom:var(--s4)">Drawn fresh for this exact selection, baseline and scope - change any of them and press Compare again.</div>
+    <div class="cmp-plots">${CMP.plots.map(f=>`<figure>
+      <img class="plot" alt="${esc(f)}" src="/api/paperfold/compare/plot?slug=${encodeURIComponent(CMP.slug)}&file=${encodeURIComponent(f)}&_=${bust}">
+      <figcaption>${esc(CMP_CAPTIONS[f]||'')}</figcaption></figure>`).join('')}</div></div>`;
+}
+
+// ---------- Compare: exports ----------
+// The CSV is the long-form version of both tables: one row per model per run
+// plus a row per run total, so the whole comparison can go into a notebook or a
+// spreadsheet without being retyped off the screen.
+function cmpDownloadCsv(){
+  if(!CMP){toast('Run a comparison first','err');return;}
+  const base=CMP.runs.find(r=>r.name==CMP.baseline);
+  const q=v=>{const s=v==null?'':String(v);
+    return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const lines=[['run','wording','words_per_label','spatial_words_in_labels','scope',
+                'model','trials','accuracy_pct','accuracy_change_vs_baseline_pp',
+                'tokens_per_trial','tokens_change_pct','seconds_per_trial',
+                'seconds_change_pct'].join(',')];
+  const scope=CMP.restricted?'shared models and folds only':'everything each run has';
+  for(const r of CMP.runs){
+    const row=(model,acc,tok,sec,trials)=>{
+      const b=model=='ALL MODELS'
+        ? {accuracy:base.metrics.accuracy.value,tokens:base.metrics.tokens.value,time:base.metrics.time.value}
+        : (base.per_model[model]||{});
+      const pct=(v,bv)=>(v==null||!bv)?'':(100*(v-bv)/bv).toFixed(2);
+      lines.push([r.name,r.label.kind,r.label.words,r.label.spatial_words,scope,model,trials,
+        acc==null?'':acc.toFixed(2),
+        (acc==null||b.accuracy==null)?'':(acc-b.accuracy).toFixed(2),
+        tok==null?'':tok.toFixed(1), pct(tok,b.tokens),
+        sec==null?'':sec.toFixed(2), pct(sec,b.time),
+      ].map(q).join(','));
+    };
+    row('ALL MODELS',r.metrics.accuracy.value,r.metrics.tokens.value,r.metrics.time.value,r.trials);
+    for(const m of CMP.models){
+      const pm=r.per_model[m]; if(!pm)continue;
+      row(m,pm.accuracy,pm.tokens,pm.time,pm.trials);
+    }
+  }
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='paperfold_comparison_'+CMP.runs.length+'_runs.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast('CSV downloaded','ok');
+}
+
+// Same deal as the Paper Folding tab's "Download all": the server writes one
+// folder into Downloads because a browser can't, and falls back to downloading
+// each PNG on its own where it can't (Colab).
+async function cmpDownloadAllGraphs(){
+  if(!CMP||!CMP.plots||!CMP.plots.length){toast('Run a comparison first','err');return;}
+  const btn=$('cmpDownloadAllBtn'); btn.disabled=true;
+  try{
+    const s=await api('/api/paperfold/compare/plots/save','POST',{slug:CMP.slug});
+    if(s.ok){toast(`Saved ${s.count} charts to ${s.short}`,'ok');return;}
+    if(!s.fallback){toast('Error: '+s.error,'err');return;}
+    toast(`Downloading ${CMP.plots.length} charts…`,'ok');
+    await triggerDownloads(CMP.plots.map(f=>
+      '/api/paperfold/compare/plot?slug='+encodeURIComponent(CMP.slug)+
+      '&file='+encodeURIComponent(f)+'&download=1'));
+  } finally { cmpSyncButtons(); }
 }
 
 // ---------- Terminal (mirrors the real process's stdout/stderr/logging) ----------

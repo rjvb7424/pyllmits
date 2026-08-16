@@ -46,6 +46,11 @@ ROOT = Path.cwd()
 CONFIGS_DIR = ROOT / "configs"
 RUNS_DIR = ROOT / "runs"
 PAPERFOLD_RUNS_DIR = ROOT / "paperfold_runs"
+# Cross-run comparison charts. Derived output, not results: everything in here
+# is rebuilt from paperfold_runs/ on demand and old folders are pruned (see
+# paperfold.comparison.prune_comparisons), so it is kept out of the runs
+# directory rather than sitting among the runs it is built from.
+PAPERFOLD_COMPARE_DIR = ROOT / "paperfold_comparisons"
 PAPERFOLD_DIRECTIONS = ("north", "south", "east", "west")
 ENV_PATH = ROOT / ".env"
 
@@ -655,6 +660,13 @@ class Handler(BaseHTTPRequestHandler):
                     dl = q["file"][0] if q.get("download") else None
                     return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
+            if p == "/api/paperfold/compare/plot":
+                folder = self._paperfold_compare_dir(q["slug"][0])
+                fp = (folder / q["file"][0]) if folder else None
+                if fp and fp.exists():
+                    dl = q["file"][0] if q.get("download") else None
+                    return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
+                return self._send(404, {"error": "not found"})
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("GET %s failed", p)
@@ -745,6 +757,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self._save_paperfold_plots(self._body().get("run", "")))
             if p == "/api/paperfold/analyze":
                 return self._send(200, self._regen_paperfold_graphs(self._body()["run"]))
+            if p == "/api/paperfold/compare":
+                b = self._body()
+                return self._send(200, self._compare_paperfold_runs(
+                    b.get("runs") or [], b.get("baseline"),
+                    bool(b.get("restrict", True)), bool(b.get("plots", True))))
+            if p == "/api/paperfold/compare/plots/save":
+                b = self._body()
+                slug = b.get("slug", "")
+                folder = self._paperfold_compare_dir(slug)
+                if folder is None:
+                    return self._send(400, {"ok": False, "error": "invalid comparison"})
+                return self._send(200, self._save_plots_folder(
+                    folder, f"paperfold_comparison_{slug}"))
             return self._send(404, {"error": "unknown route"})
         except Exception as exc:
             LOG.exception("POST %s failed", p)
@@ -1027,16 +1052,24 @@ class Handler(BaseHTTPRequestHandler):
         return out
 
     def _save_paperfold_plots(self, run_name: str) -> dict:
-        """Copy a run's plot PNGs into a folder named after the run inside the
-        user's Downloads, and report where they landed.
+        """"Download all" for one run's graphs (see _save_plots_folder)."""
+        run_dir = self._paperfold_run_dir(run_name)
+        if run_dir is None:
+            return {"ok": False, "error": "invalid run name"}
+        return self._save_plots_folder(run_dir / "plots", run_dir.name)
 
-        This is what the Graphs tab's "Download all" does. A browser download
-        can't produce a folder - the <a download> attribute ignores any path in
-        its value, and there's no API to create a directory in Downloads - so
-        the folder is made here instead, which works because the Studio server
-        runs on the same machine as the browser looking at it. PNGs already in
-        the destination are overwritten: they're older copies of the very
-        graphs being saved.
+    def _save_plots_folder(self, plots: Path, dest_name: str) -> dict:
+        """Copy a folder of plot PNGs into a new folder inside the user's
+        Downloads, and report where they landed.
+
+        This is what every "Download all" button does, for a single run's
+        graphs and for a comparison's alike. A browser download can't produce a
+        folder - the <a download> attribute ignores any path in its value, and
+        there's no API to create a directory in Downloads - so the folder is
+        made here instead, which works because the Studio server runs on the
+        same machine as the browser looking at it. PNGs already in the
+        destination are overwritten: they're older copies of the very graphs
+        being saved.
 
         The exception is Colab, where the kernel's filesystem is a remote VM
         and not the machine doing the downloading. "fallback" tells the caller
@@ -1045,16 +1078,13 @@ class Handler(BaseHTTPRequestHandler):
         if colab_support.in_colab():
             return {"ok": False, "fallback": True,
                     "error": "on Colab the server's filesystem isn't your machine"}
-        run_dir = self._paperfold_run_dir(run_name)
-        if run_dir is None:
-            return {"ok": False, "error": "invalid run name"}
-        plots = run_dir / "plots"
         files = sorted(plots.glob("*.png")) if plots.exists() else []
         if not files:
-            return {"ok": False, "error": "no plots for this run"}
+            return {"ok": False, "error": "no plots to save"}
         home = Path.home()
         downloads = home / "Downloads"
-        dest = (downloads if downloads.is_dir() else home) / run_dir.name
+        dest = ((downloads if downloads.is_dir() else home)
+                / re.sub(r'[^A-Za-z0-9._-]', "_", dest_name))
         try:
             dest.mkdir(parents=True, exist_ok=True)
             for f in files:
@@ -1080,6 +1110,60 @@ class Handler(BaseHTTPRequestHandler):
             return 400, {"ok": False, "error": "that run is currently in progress - stop it first"}
         shutil.rmtree(run_dir)
         return 200, {"ok": True, "path": str(run_dir)}
+
+    def _paperfold_compare_dir(self, slug: str) -> Path | None:
+        """Resolve a comparison slug to its folder, refusing anything that
+        isn't one this server made.
+
+        Same guard as _paperfold_run_dir(), tightened by the slug's own shape:
+        comparison folders are always "cmp_" plus a hex digest (see
+        comparison.comparison_slug), so a name that doesn't look like one can be
+        turned away before it is ever joined onto a path.
+        """
+        if not slug or not re.fullmatch(r"cmp_[0-9a-f]{6,32}", slug):
+            return None
+        folder = (PAPERFOLD_COMPARE_DIR / slug).resolve()
+        if folder.parent != PAPERFOLD_COMPARE_DIR.resolve():
+            return None
+        return folder
+
+    def _compare_paperfold_runs(self, names: list, baseline, restrict: bool,
+                                with_plots: bool) -> dict:
+        """Compare several paper-folding runs and, unless the caller only wants
+        the numbers refreshed, draw the comparison charts.
+
+        Everything about *how* runs are compared lives in
+        paperfold.comparison - this only resolves names to folders (refusing
+        anything outside paperfold_runs/, same as every other paperfold route)
+        and decides where the charts are written.
+        """
+        from llmits.paperfold import comparison as cmp
+
+        if not names:
+            return {"ok": False, "error": "pick at least two runs to compare"}
+        # Dedupe while keeping the caller's order: the order runs are listed in
+        # is the order every chart reads left to right, and the same run twice
+        # would compare it against itself.
+        seen, ordered = set(), []
+        for n in names:
+            if n not in seen:
+                seen.add(n)
+                ordered.append(n)
+
+        dirs = []
+        for name in ordered:
+            run_dir = self._paperfold_run_dir(name)
+            if run_dir is None or not (run_dir / "results.json").exists():
+                return {"ok": False, "error": f"no run called '{name}'"}
+            dirs.append(run_dir)
+
+        slug = cmp.comparison_slug(ordered)
+        plots_dir = (PAPERFOLD_COMPARE_DIR / slug) if with_plots else None
+        summary = cmp.compare(dirs, baseline, restrict, plots_dir)
+        summary["slug"] = slug
+        if with_plots and summary.get("ok"):
+            cmp.prune_comparisons(PAPERFOLD_COMPARE_DIR)
+        return summary
 
     def _regen_paperfold_graphs(self, run_name):
         """Rebuild all plots for a paper-folding run from its results.json (no
