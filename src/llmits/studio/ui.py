@@ -2266,11 +2266,10 @@ function cmpBindSort(){
 
 // ---------- Compare: charts ----------
 // Each chart gets a caption saying what to look for in it - the charts are
-// worth nothing if it isn't obvious which question each one answers.
+// worth nothing if it isn't obvious which question each one answers. The three
+// by-experiment bar charts carry their own explanation in their subtitles, so
+// they are left out here rather than saying it twice.
 const CMP_CAPTIONS={
-  'accuracy_by_experiment.png':'The headline. One bar per run, with the line through it showing how far apart the best and worst models were - an average that moved because every model moved is a fact about the wording, one that moved because a single model collapsed is not.',
-  'tokens_by_experiment.png':'What each wording cost in tokens. Read it next to the accuracy bars: same score for more tokens still means the models had to work harder.',
-  'time_by_experiment.png':'The same in wall-clock seconds - the one that moves when a model reasons for longer without producing more text.',
   'accuracy_matrix.png':'Every model against every run. Look for whole rows that go dark (a model the wording broke) and whole columns that do (a wording that broke everyone).',
   'accuracy_change_matrix.png':'The same grid as change from the baseline. Green gained, red lost; a column of one color is the field moving together.',
   'tokens_change_matrix.png':'What that change cost per model. A red column here beside a colorless one in the chart above is the "paid more, got nothing" case.',
@@ -2290,7 +2289,7 @@ function cmpPlotsSection(){
     <div class="sub" style="margin-bottom:var(--s4)">Drawn fresh for this exact selection, baseline and scope - change any of them and press Compare again.</div>
     <div class="cmp-plots">${CMP.plots.map(f=>`<figure>
       <img class="plot" alt="${esc(f)}" src="/api/paperfold/compare/plot?slug=${encodeURIComponent(CMP.slug)}&file=${encodeURIComponent(f)}&_=${bust}">
-      <figcaption>${esc(CMP_CAPTIONS[f]||'')}</figcaption></figure>`).join('')}</div></div>`;
+      ${CMP_CAPTIONS[f]?`<figcaption>${esc(CMP_CAPTIONS[f])}</figcaption>`:''}</figure>`).join('')}</div></div>`;
 }
 
 // ---------- Compare: exports ----------

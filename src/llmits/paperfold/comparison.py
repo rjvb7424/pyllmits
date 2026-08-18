@@ -67,6 +67,7 @@ from typing import Any, Callable
 import matplotlib
 matplotlib.use("Agg")
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -132,6 +133,7 @@ class Measure:
     of: Callable[[list[dict]], float]
     fmt: Callable[[float], str]
     delta_fmt: Callable[[float], str]
+    delta_unit: str                 # what a change is counted in, spelled out
     unit: str                       # short suffix for the UI
 
 
@@ -140,19 +142,22 @@ MEASURES: dict[str, Measure] = {
         key="accuracy", label="Accuracy",
         axis="Accuracy (% of answers correct)",
         higher_is_better=True, of=ar.accuracy_of,
-        fmt=lambda v: f"{v:.0f}%", delta_fmt=lambda d: f"{d:+.1f} pp", unit="%",
+        fmt=lambda v: f"{v:.0f}%", delta_fmt=lambda d: f"{d:+.1f} pp",
+        delta_unit="percentage points (pp)", unit="%",
     ),
     "tokens": Measure(
         key="tokens", label="Token consumption",
         axis="Average token consumption (total tokens per trial)",
         higher_is_better=False, of=ar.field_average("total_tokens"),
-        fmt=lambda v: f"{v:,.0f}", delta_fmt=lambda d: f"{d:+,.0f}", unit=" tok",
+        fmt=lambda v: f"{v:,.0f}", delta_fmt=lambda d: f"{d:+,.0f}",
+        delta_unit="tokens", unit=" tok",
     ),
     "time": Measure(
         key="time", label="Response time",
         axis="Average response time (seconds per trial)",
         higher_is_better=False, of=ar.field_average("elapsed_seconds"),
-        fmt=lambda v: f"{v:.1f}s", delta_fmt=lambda d: f"{d:+.1f}s", unit="s",
+        fmt=lambda v: f"{v:.1f}s", delta_fmt=lambda d: f"{d:+.1f}s",
+        delta_unit="seconds", unit="s",
     ),
 }
 MEASURE_ORDER = ("accuracy", "tokens", "time")
@@ -771,10 +776,24 @@ def _stagger(points, xspan: float, yspan: float, steps=(10, -26, 36, -52, 62, -7
     return offsets
 
 
-def _subtitle(ax, text: str) -> None:
-    ax.annotate(text, xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
+def _subtitle(ax, text: str | list[str]) -> None:
+    """The gray lines between the title and the axes.
+
+    Takes a list when a chart needs more than one, which is how the reference
+    lines and the number formats get explained: said in words above the chart
+    they read in the order the eye already travels, where a legend box below it
+    is a lookup table the reader has to go and find.
+    """
+    body = text if isinstance(text, str) else "\n".join(text)
+    ax.annotate(body, xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
                 textcoords="offset points", ha="center", va="bottom",
-                fontsize=9, color=LABEL_GRAY)
+                fontsize=9, color=LABEL_GRAY, linespacing=1.5)
+
+
+def _title_pad(lines: int) -> float:
+    """Room above the axes for a subtitle of ``lines`` lines, so the title
+    clears it instead of landing on top of the top one."""
+    return 18 + 13 * lines
 
 
 def _scope_note(summary) -> str:
@@ -826,11 +845,17 @@ def plot_metric_by_experiment(summary, out: Path, key: str) -> None:
 
     fig, ax = plt.subplots(figsize=(max(6.5, 1.9 * len(runs) + 2.5), 6.2))
     ax.bar(xs, values, width=0.62, color=[colors[s["name"]] for s in runs], zorder=2)
-    ax.errorbar(xs, values,
-                yerr=[[v - lo for v, lo in zip(values, lows)],
-                      [hi - v for v, hi in zip(values, highs)]],
-                fmt="none", ecolor="#52514e", elinewidth=1, capsize=5, zorder=4,
-                label="Lowest to highest model")
+    # The range line spends most of its length inside its own bar, and the
+    # baseline's bar is the same gray it used to be drawn in - so it vanished
+    # on exactly the bar the reader compares everything against. Near-black
+    # with a white halo keeps it readable over a dark bar and over the paper.
+    spread = ax.errorbar(xs, values,
+                         yerr=[[v - lo for v, lo in zip(values, lows)],
+                               [hi - v for v, hi in zip(values, highs)]],
+                         fmt="none", ecolor="#1c1b19", elinewidth=1.2, capsize=5,
+                         capthick=1.2, zorder=4)
+    for artist in (*spread.lines[1], *spread.lines[2]):
+        artist.set_path_effects([pe.withStroke(linewidth=3.4, foreground="white")])
 
     # Where the axis was cut, the labels sit over the whiskers running past them,
     # so they get a plain background to stay legible against the line.
@@ -852,26 +877,30 @@ def plot_metric_by_experiment(summary, out: Path, key: str) -> None:
                     zorder=5, bbox=plate)
 
     ax.axhline(base["metrics"][key]["value"], linestyle=(0, (6, 3)), linewidth=1.2,
-               color=BASELINE_COLOR, zorder=1,
-               label=f"{base['display']} (baseline)")
+               color=BASELINE_COLOR, zorder=1)
     if key == "accuracy":
-        ax.axhline(CHANCE, linestyle="--", linewidth=1, color="#898781",
-                   label=f"Chance ({CHANCE:.0f}%)")
+        ax.axhline(CHANCE, linestyle="--", linewidth=1, color="#898781", zorder=1)
 
     ax.set_xticks(xs)
     ax.set_xticklabels([_tick(s["name"]) for s in runs], fontsize=9)
     ax.set_xlabel("Experiment (one paper-folding run each)", color=LABEL_GRAY, fontsize=10)
     ax.set_ylabel(measure.axis, color=LABEL_GRAY, fontsize=10)
-    ax.set_title(f"{measure.label} across {len(runs)} experiments", fontsize=13, pad=30)
-    _subtitle(ax, f"Each bar = mean of that run's model bars  |  {_scope_note(summary)}" +
-                  ("  |  axis cut to the bars; arrows mark where the priciest model reached"
-                   if clipped else ""))
+    lines = [
+        f"Each bar = mean of that run's model bars  |  {_scope_note(summary)}"
+        + ("  |  axis cut to the bars; arrows mark where the priciest model reached"
+           if clipped else ""),
+        "The figure above each bar is its change from the baseline in "
+        f"{measure.delta_unit} - green where that is the better direction, red where it isn't",
+        "Dashed line = the baseline run  |  "
+        + (f"Dotted line = chance ({CHANCE:.0f}%)  |  " if key == "accuracy" else "")
+        + "Vertical line through each bar = its lowest to highest model",
+    ]
+    ax.set_title(f"{measure.label} across {len(runs)} experiments",
+                 fontsize=13, pad=_title_pad(len(lines)))
+    _subtitle(ax, lines)
     ax.set_ylim(0, top)
     ax.margins(x=0.08)
     ax.grid(True, axis="y", alpha=0.3)
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, fontsize=9, loc="upper center",
-               bbox_to_anchor=(0.5, 0.0), ncol=3, frameon=False)
     ar._finish(fig, ax, out, rotate_xticks=False)
 
 
