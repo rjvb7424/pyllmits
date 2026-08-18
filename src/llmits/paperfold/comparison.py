@@ -34,9 +34,11 @@ Plots are written to a comparison directory as ``<kind>.png``:
   * ``accuracy_by_experiment``      - the headline: one bar per run
   * ``tokens_by_experiment``        - what each run cost in tokens
   * ``time_by_experiment``          - and in wall-clock thinking time
-  * ``accuracy_matrix``             - every model x every run, as a heatmap
-  * ``accuracy_change_matrix``      - the same grid as change from the baseline
-  * ``tokens_change_matrix``        - and the token cost of that change
+  * ``accuracy_matrix`` / ``tokens_matrix`` / ``time_matrix``
+                                    - every model x every run, as a heatmap
+  * ``accuracy_change_matrix`` / ``tokens_change_matrix`` / ``time_change_matrix``
+                                    - the same three grids as change from the
+                                      baseline run
   * ``model_slopes``                - one line per model across the runs
   * ``sensitivity_by_model``        - how much each model swung, ranked
   * ``accuracy_vs_tokens_by_experiment`` / ``..._vs_time_...``
@@ -106,7 +108,8 @@ CHANCE = 20.0          # five candidates, so a coin-flipper lands here
 
 PLOT_KINDS = (
     "accuracy_by_experiment", "tokens_by_experiment", "time_by_experiment",
-    "accuracy_matrix", "accuracy_change_matrix", "tokens_change_matrix",
+    "accuracy_matrix", "tokens_matrix", "time_matrix",
+    "accuracy_change_matrix", "tokens_change_matrix", "time_change_matrix",
     "model_slopes", "sensitivity_by_model",
     "accuracy_vs_tokens_by_experiment", "accuracy_vs_time_by_experiment",
     "label_complexity", "accuracy_by_folds_by_experiment",
@@ -1012,11 +1015,32 @@ def _draw_matrix(summary, out: Path, *, key: str, relative: bool, title: str,
     plt.close(fig)
 
 
+def _seconds(value: float) -> str:
+    """Seconds in a heatmap cell: a model that answers in 1.4s and one that
+    thinks for 197s share a grid, and rounding the first to "1" throws away the
+    only digit that distinguishes it from a model twice as fast."""
+    return f"{value:,.0f}" if abs(value) >= 10 else f"{value:.1f}"
+
+
 def plot_accuracy_matrix(summary, out: Path) -> None:
     _draw_matrix(summary, out, key="accuracy", relative=False,
                  title="Accuracy of every model in every experiment",
                  subtitle=f"Percent of answers correct  |  {_scope_note(summary)}",
                  cbar_label="Accuracy (%)", fmt=lambda v: f"{v:.0f}")
+
+
+def plot_tokens_matrix(summary, out: Path) -> None:
+    _draw_matrix(summary, out, key="tokens", relative=False,
+                 title="Token consumption of every model in every experiment",
+                 subtitle=f"Average total tokens per trial  |  {_scope_note(summary)}",
+                 cbar_label="Tokens per trial", fmt=lambda v: f"{v:,.0f}")
+
+
+def plot_time_matrix(summary, out: Path) -> None:
+    _draw_matrix(summary, out, key="time", relative=False,
+                 title="Response time of every model in every experiment",
+                 subtitle=f"Average seconds per trial  |  {_scope_note(summary)}",
+                 cbar_label="Seconds per trial", fmt=_seconds)
 
 
 def plot_accuracy_change_matrix(summary, out: Path) -> None:
@@ -1034,6 +1058,15 @@ def plot_tokens_change_matrix(summary, out: Path) -> None:
     _draw_matrix(summary, out, key="tokens", relative=True,
                  title=f"Token consumption change from {base['display']}, per model",
                  subtitle="Percent more (red) or fewer (green) tokens per trial than the "
+                          f"baseline column  |  {_scope_note(summary)}",
+                 cbar_label="Change (%)", fmt=lambda v: f"{v:+.0f}%")
+
+
+def plot_time_change_matrix(summary, out: Path) -> None:
+    base = next(s for s in summary["runs"] if s["name"] == summary["baseline"])
+    _draw_matrix(summary, out, key="time", relative=True,
+                 title=f"Response time change from {base['display']}, per model",
+                 subtitle="Percent slower (red) or faster (green) per trial than the "
                           f"baseline column  |  {_scope_note(summary)}",
                  cbar_label="Change (%)", fmt=lambda v: f"{v:+.0f}%")
 
@@ -1378,10 +1411,16 @@ def build_all_plots(summary, fold_rows, plots_dir: Path) -> list[str]:
             (lambda p: plot_metric_by_experiment(summary, p, "time"), True),
         "accuracy_matrix":
             (lambda p: plot_accuracy_matrix(summary, p), True),
+        "tokens_matrix":
+            (lambda p: plot_tokens_matrix(summary, p), True),
+        "time_matrix":
+            (lambda p: plot_time_matrix(summary, p), True),
         "accuracy_change_matrix":
             (lambda p: plot_accuracy_change_matrix(summary, p), len(runs) > 1),
         "tokens_change_matrix":
             (lambda p: plot_tokens_change_matrix(summary, p), len(runs) > 1),
+        "time_change_matrix":
+            (lambda p: plot_time_change_matrix(summary, p), len(runs) > 1),
         "model_slopes":
             (lambda p: plot_model_slopes(summary, p), len(runs) > 1),
         "sensitivity_by_model":

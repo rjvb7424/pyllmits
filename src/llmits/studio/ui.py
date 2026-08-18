@@ -2271,8 +2271,11 @@ function cmpBindSort(){
 // they are left out here rather than saying it twice.
 const CMP_CAPTIONS={
   'accuracy_matrix.png':'Every model against every run. Look for whole rows that go dark (a model the wording broke) and whole columns that do (a wording that broke everyone).',
+  'tokens_matrix.png':'The same grid in tokens per trial. Most of the contrast here is between models rather than between wordings - one reasoning model can spend five times what the rest of the field does - so read along each row before comparing columns.',
+  'time_matrix.png':'And in seconds per trial. Read it beside the token grid: a row that got slower without getting more expensive was a model thinking for longer, not writing more.',
   'accuracy_change_matrix.png':'The same grid as change from the baseline. Green gained, red lost; a column of one color is the field moving together.',
   'tokens_change_matrix.png':'What that change cost per model. A red column here beside a colorless one in the chart above is the "paid more, got nothing" case.',
+  'time_change_matrix.png':'And what it cost in waiting. Green got faster, red got slower, each against that model’s own baseline rather than against the field.',
   'model_slopes.png':'One line per model. Parallel lines mean the wording did the same thing to everybody; lines that cross mean it suits some models and not others, and those need different follow-ups.',
   'sensitivity_by_model.png':'Ranked by how much each model swung across the whole selection. Top of this chart is where the words were doing the work; the bottom is what reading the geometry looks like.',
   'accuracy_vs_tokens_by_experiment.png':'Accuracy against token spend, with an arrow from the baseline to each run. Straight up bought accuracy, straight right only bought a bill.',
