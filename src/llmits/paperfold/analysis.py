@@ -90,6 +90,13 @@ AVERAGE_COLOR = "#6f6d69"
 AVERAGE_BREAKDOWN_COLOR = "#b6b4af"   # the per-fold-count bars it breaks into
 AVERAGE_GAP = 0.6                     # blank slot before the whole-run bar
 
+# Layout of the "by model" rankings. The bars are upright and the ranking grows
+# sideways, so a run with a dozen-plus models widens the figure rather than
+# stretching it into a column too tall to take in at once. The minimum width
+# keeps the title and subtitle on one line for the small runs.
+RANKED_BAR_SLOT = 0.62         # inches of figure width per model
+RANKED_BARS_MIN_WIDTH = 7.0    # inches, however few models a run holds
+
 # Lines that land on the same accuracy (several models all at 100%, say) would
 # be drawn exactly on top of each other and only the last one painted would be
 # visible. Each hidden line gets a constant vertical nudge instead: small
@@ -481,49 +488,92 @@ def plot_accuracy_by_model(rows, out: Path, experiment_name: str) -> None:
     so you can still see who sits above it and who below.
     """
     per_model = model_accuracies(rows)
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 1) + 1)))
+    fig, ax = plt.subplots(figsize=_ranked_bars_figsize(len(per_model)))
     _draw_ranked_bars(ax, per_model, model_color_map(rows),
                       fmt=lambda v: f"{v:.0f}%", label_pad=1.5)
-    ax.axvline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
-    ax.set_xlabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
-    ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.axhline(20, linestyle="--", linewidth=1, color="#898781", label="Chance (20%)")
+    ax.set_xlabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel("Accuracy (% of answers correct)", color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"Accuracy by model of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
     ax.annotate(_average_note(rows, per_model),
                 xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
                 textcoords="offset points", ha="center", va="bottom",
                 fontsize=9, color=LABEL_GRAY)
-    ax.set_xlim(0, 110)
-    ax.legend(fontsize=9, loc="lower right")
+    ax.set_ylim(0, 110)
+    ax.legend(fontsize=9, loc="upper right")
     _finish(fig, ax, out, rotate_xticks=False)
 
 
+def _ranked_bars_figsize(models: int) -> tuple[float, float]:
+    """Figure size for a "by model" ranking: fixed height, width growing with
+    the number of bars.
+
+    The mirror of what the horizontal version did. Height stays put because
+    the bars are read against a 0-100 (or 0-max) axis that does not care how
+    many models there are, and RANKED_BAR_SLOT is enough width per bar to keep
+    a slanted model name under each one without the labels running together.
+    """
+    return (max(RANKED_BARS_MIN_WIDTH, _ranked_bars_natural_width(models)), 8.0)
+
+
+def _ranked_bars_natural_width(models: int) -> float:
+    """The figure width this many bars actually want, before the minimum that
+    keeps the title and subtitle from wrapping is applied."""
+    return RANKED_BAR_SLOT * (models + 1) + 2.0
+
+
+def _ranked_bar_width(models: int) -> float:
+    """Bar width as a fraction of its slot, shrunk by however much the minimum
+    figure width stretched the axes past what this many bars needed.
+
+    Without it a run with one or two models spreads its bars across the whole
+    minimum-width figure and they read as blocks of colour rather than bars.
+    Shrinking in step with the stretch keeps a bar about the same number of
+    inches wide whether the run holds two models or twenty.
+    """
+    natural = _ranked_bars_natural_width(models)
+    return 0.8 * min(1.0, natural / RANKED_BARS_MIN_WIDTH)
+
+
 def _draw_ranked_bars(ax, per_model, colors_map, *, fmt, label_pad) -> float:
-    """Draw one ranked horizontal bar per model, mark the run's average as a
+    """Draw one ranked vertical bar per model, mark the run's average as a
     reference line, and return that average.
 
     Shared by every "by model" chart here (accuracy, tokens, response time),
     so a ranking reads the same way whichever measure it shows. The average is
-    a line and not a bar on purpose: as a bar it took a row in the ranking and
+    a line and not a bar on purpose: as a bar it took a slot in the ranking and
     read as one more model, and the whole-run number already has a graph of
     its own (average_accuracy and its two companions) built for comparing runs
     to each other. Here it only needs to answer "above or below average", and
     a line does that without competing with the models.
+
+    Bars run bottom-to-top and are ordered best-first left to right. A run can
+    hold a dozen-plus models, and as horizontal bars that many rows stretched
+    the figure into a column too tall to take in at once; upright bars grow
+    sideways instead, which is the direction a page has room in. model_values
+    ranks lowest-to-highest, so the order is reversed here: read left to right,
+    the ranking still descends the way it did read top to bottom.
     """
-    models = [m for m, _, _ in per_model]
-    values = [v for _, v, _ in per_model]
+    ranked = list(reversed(per_model))     # best first, left to right
+    models = [m for m, _, _ in ranked]
+    values = [v for _, v, _ in ranked]
     average = macro_average(values)
 
-    ys = list(range(len(models)))
-    bars = ax.barh(ys, values, color=[colors_map[m] for m in models])
+    xs = list(range(len(models)))
+    bars = ax.bar(xs, values, width=_ranked_bar_width(len(models)),
+                  color=[colors_map[m] for m in models])
     for bar, value in zip(bars, values):
-        ax.text(bar.get_width() + label_pad, bar.get_y() + bar.get_height() / 2,
-                fmt(value), va="center", fontsize=9, color="#52514e")
-    ax.set_yticks(ys)
-    ax.set_yticklabels(models)
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + label_pad,
+                fmt(value), ha="center", va="bottom", fontsize=9, color="#52514e")
+    ax.set_xticks(xs)
+    # Model names are long enough to collide at this many bars, so they are
+    # slanted harder than the 20 degrees _finish uses elsewhere - hence
+    # rotate_xticks=False at every call site, so this angle survives.
+    ax.set_xticklabels(models, rotation=30, ha="right", rotation_mode="anchor")
     # A longer dash than the chance line's: the two sit in the same gray family
     # and would otherwise be hard to tell apart where they fall close together.
-    ax.axvline(average, linestyle=(0, (6, 3)), linewidth=1.2, color=AVERAGE_COLOR,
+    ax.axhline(average, linestyle=(0, (6, 3)), linewidth=1.2, color=AVERAGE_COLOR,
                label=f"Average of all {len(models)} models ({fmt(average)})")
     return average
 
@@ -759,32 +809,32 @@ def plot_accuracy_vs_time(rows, out: Path, experiment_name: str) -> None:
 
 
 def _plot_avg_by_model(rows, out: Path, experiment_name: str, *,
-                       field: str, metric: str, xlabel: str, fmt) -> None:
+                       field: str, metric: str, ylabel: str, fmt) -> None:
     """Shared shape for the per-model cost charts (response time, token
     consumption): average ``field`` over each model's trials, drawn as
-    horizontal bars so the figure stays a sane size however many models a
-    run has. Ranked so the value increases up the chart, with the run's
-    average marked as a line - the same reference the accuracy ranking
-    carries, so "is this model dear or cheap for this run" is answerable
-    without doing the arithmetic by eye. The average as a figure in its own
-    right belongs to average_tokens/average_time, not here."""
+    vertical bars so the figure stays a sane size however many models a
+    run has. Ranked dearest-first left to right, with the run's average
+    marked as a line - the same reference the accuracy ranking carries, so
+    "is this model dear or cheap for this run" is answerable without doing
+    the arithmetic by eye. The average as a figure in its own right belongs
+    to average_tokens/average_time, not here."""
     measure = field_average(field)
     per_model = model_values(rows, measure)
-    xmax = max((v for _, v, _ in per_model), default=0) or 1.0
+    top = max((v for _, v, _ in per_model), default=0) or 1.0
 
-    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.6 * (len(per_model) + 1) + 1)))
+    fig, ax = plt.subplots(figsize=_ranked_bars_figsize(len(per_model)))
     _draw_ranked_bars(ax, per_model, model_color_map(rows),
-                      fmt=fmt, label_pad=0.01 * xmax)
-    ax.set_xlabel(xlabel, color=LABEL_GRAY, fontsize=10)
-    ax.set_ylabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+                      fmt=fmt, label_pad=0.01 * top)
+    ax.set_xlabel("Model (LLM model used)", color=LABEL_GRAY, fontsize=10)
+    ax.set_ylabel(ylabel, color=LABEL_GRAY, fontsize=10)
     ax.set_title(f"{metric} of {display_name(experiment_name)} experiment",
                  fontsize=13, pad=28)
     ax.annotate(_average_note(rows, per_model, measure, fmt),
                 xy=(0.5, 1.0), xycoords="axes fraction", xytext=(0, 8),
                 textcoords="offset points", ha="center", va="bottom",
                 fontsize=9, color=LABEL_GRAY)
-    ax.set_xlim(0, 1.15 * xmax)
-    ax.legend(fontsize=9, loc="lower right")
+    ax.set_ylim(0, 1.15 * top)
+    ax.legend(fontsize=9, loc="upper right")
     _finish(fig, ax, out, rotate_xticks=False)
 
 
@@ -795,7 +845,7 @@ def plot_elapsed_time_by_model(rows, out: Path, experiment_name: str) -> None:
         rows, out, experiment_name,
         field="elapsed_seconds",
         metric="Average response time by model",
-        xlabel="Average response time (seconds per trial)",
+        ylabel="Average response time (seconds per trial)",
         fmt=lambda v: f"{v:.2f}s" if v > 0 else "-",
     )
 
@@ -807,7 +857,7 @@ def plot_tokens_by_model(rows, out: Path, experiment_name: str) -> None:
         rows, out, experiment_name,
         field="total_tokens",
         metric="Average token consumption by model",
-        xlabel="Average token consumption (total tokens per trial)",
+        ylabel="Average token consumption (total tokens per trial)",
         fmt=lambda v: f"{v:,.0f}" if v > 0 else "-",
     )
 
