@@ -51,6 +51,10 @@ PAPERFOLD_RUNS_DIR = ROOT / "paperfold_runs"
 # paperfold.comparison.prune_comparisons), so it is kept out of the runs
 # directory rather than sitting among the runs it is built from.
 PAPERFOLD_COMPARE_DIR = ROOT / "paperfold_comparisons"
+# Confusion matrices for a selection of runs. Derived output on the same terms
+# as the comparison charts above - rebuilt from paperfold_runs/ on demand, old
+# folders pruned (see paperfold.confusion.prune_confusions).
+PAPERFOLD_CONFUSION_DIR = ROOT / "paperfold_confusions"
 PAPERFOLD_DIRECTIONS = ("north", "south", "east", "west")
 ENV_PATH = ROOT / ".env"
 
@@ -660,6 +664,13 @@ class Handler(BaseHTTPRequestHandler):
                     dl = q["file"][0] if q.get("download") else None
                     return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
                 return self._send(404, {"error": "not found"})
+            if p == "/api/paperfold/confusion/plot":
+                folder = self._paperfold_confusion_dir(q["slug"][0])
+                fp = (folder / q["file"][0]) if folder else None
+                if fp and fp.exists():
+                    dl = q["file"][0] if q.get("download") else None
+                    return self._send(200, fp.read_bytes(), "image/png", download_name=dl)
+                return self._send(404, {"error": "not found"})
             if p == "/api/paperfold/compare/plot":
                 folder = self._paperfold_compare_dir(q["slug"][0])
                 fp = (folder / q["file"][0]) if folder else None
@@ -762,6 +773,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self._compare_paperfold_runs(
                     b.get("runs") or [], b.get("baseline"),
                     bool(b.get("restrict", True)), bool(b.get("plots", True))))
+            if p == "/api/paperfold/confusion":
+                b = self._body()
+                return self._send(200, self._confusion_paperfold_runs(
+                    b.get("runs") or [], bool(b.get("restrict", True)),
+                    b.get("models"), b.get("folds"), bool(b.get("plots", True))))
+            if p == "/api/paperfold/confusion/plots/save":
+                b = self._body()
+                folder = self._paperfold_confusion_dir(b.get("slug", ""))
+                if folder is None:
+                    return self._send(400, {"ok": False, "error": "invalid confusion analysis"})
+                return self._send(200, self._save_plots_folder(
+                    folder, f"paperfold_confusion_{b.get('slug', '')}"))
             if p == "/api/paperfold/compare/plots/save":
                 b = self._body()
                 slug = b.get("slug", "")
@@ -1163,6 +1186,57 @@ class Handler(BaseHTTPRequestHandler):
         summary["slug"] = slug
         if with_plots and summary.get("ok"):
             cmp.prune_comparisons(PAPERFOLD_COMPARE_DIR)
+        return summary
+
+    def _paperfold_confusion_dir(self, slug: str) -> Path | None:
+        """Resolve a confusion slug to its folder, refusing anything that isn't
+        one this server made - same guard as _paperfold_compare_dir(), tightened
+        by the slug's own "cfm_" + hex shape (see confusion.confusion_slug)."""
+        if not slug or not re.fullmatch(r"cfm_[0-9a-f]{6,32}", slug):
+            return None
+        folder = (PAPERFOLD_CONFUSION_DIR / slug).resolve()
+        if folder.parent != PAPERFOLD_CONFUSION_DIR.resolve():
+            return None
+        return folder
+
+    def _confusion_paperfold_runs(self, names: list, restrict: bool, models, folds,
+                                  with_plots: bool) -> dict:
+        """Build every confusion matrix for a selection of runs, and draw them.
+
+        Everything about *how* the grids are cut and tested lives in
+        paperfold.confusion - this only resolves names to folders (refusing
+        anything outside paperfold_runs/, same as every other paperfold route)
+        and decides where the charts are written.
+        """
+        from llmits.paperfold import confusion as cfm
+
+        if not names:
+            return {"ok": False, "error": "pick at least one run"}
+        # Dedupe while keeping the caller's order - the order runs are listed in
+        # is the order the grids read down their rows.
+        seen, ordered = set(), []
+        for n in names:
+            if n not in seen:
+                seen.add(n)
+                ordered.append(n)
+
+        dirs = []
+        for name in ordered:
+            run_dir = self._paperfold_run_dir(name)
+            if run_dir is None or not (run_dir / "results.json").exists():
+                return {"ok": False, "error": f"no run called '{name}'"}
+            dirs.append(run_dir)
+
+        slug = cfm.confusion_slug(ordered)
+        plots_dir = (PAPERFOLD_CONFUSION_DIR / slug) if with_plots else None
+        summary = cfm.analyse(
+            dirs, restrict=restrict,
+            only_models=[str(m) for m in models] if models else None,
+            only_folds=[int(f) for f in folds] if folds else None,
+            plots_dir=plots_dir)
+        summary["slug"] = slug
+        if with_plots and summary.get("ok"):
+            cfm.prune_confusions(PAPERFOLD_CONFUSION_DIR)
         return summary
 
     def _regen_paperfold_graphs(self, run_name):

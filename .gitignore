@@ -10,3 +10,4 @@ __pycache__
 /configs/
 /paperfold_runs/
 /paperfold_comparisons/
+/paperfold_confusions/
