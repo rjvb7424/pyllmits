@@ -775,9 +775,8 @@ class Handler(BaseHTTPRequestHandler):
                     bool(b.get("restrict", True)), bool(b.get("plots", True))))
             if p == "/api/paperfold/confusion":
                 b = self._body()
-                return self._send(200, self._confusion_paperfold_runs(
-                    b.get("runs") or [], bool(b.get("restrict", True)),
-                    b.get("models"), b.get("folds"), bool(b.get("plots", True))))
+                return self._send(200, self._confusion_paperfold_run(
+                    b.get("run", ""), bool(b.get("plots", True))))
             if p == "/api/paperfold/confusion/plots/save":
                 b = self._body()
                 folder = self._paperfold_confusion_dir(b.get("slug", ""))
@@ -1199,41 +1198,23 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return folder
 
-    def _confusion_paperfold_runs(self, names: list, restrict: bool, models, folds,
-                                  with_plots: bool) -> dict:
-        """Build every confusion matrix for a selection of runs, and draw them.
+    def _confusion_paperfold_run(self, name: str, with_plots: bool) -> dict:
+        """Build every confusion matrix for one paper-folding run, and draw them.
 
-        Everything about *how* the grids are cut and tested lives in
-        paperfold.confusion - this only resolves names to folders (refusing
-        anything outside paperfold_runs/, same as every other paperfold route)
-        and decides where the charts are written.
+        Everything about how the matrices are cut lives in paperfold.confusion -
+        this only resolves the name to a folder (refusing anything outside
+        paperfold_runs/, same as every other paperfold route) and decides where
+        the charts are written.
         """
         from llmits.paperfold import confusion as cfm
 
-        if not names:
-            return {"ok": False, "error": "pick at least one run"}
-        # Dedupe while keeping the caller's order - the order runs are listed in
-        # is the order the grids read down their rows.
-        seen, ordered = set(), []
-        for n in names:
-            if n not in seen:
-                seen.add(n)
-                ordered.append(n)
+        run_dir = self._paperfold_run_dir(name)
+        if run_dir is None or not (run_dir / "results.json").exists():
+            return {"ok": False, "error": f"no run called '{name}'"}
 
-        dirs = []
-        for name in ordered:
-            run_dir = self._paperfold_run_dir(name)
-            if run_dir is None or not (run_dir / "results.json").exists():
-                return {"ok": False, "error": f"no run called '{name}'"}
-            dirs.append(run_dir)
-
-        slug = cfm.confusion_slug(ordered)
+        slug = cfm.confusion_slug(name)
         plots_dir = (PAPERFOLD_CONFUSION_DIR / slug) if with_plots else None
-        summary = cfm.analyse(
-            dirs, restrict=restrict,
-            only_models=[str(m) for m in models] if models else None,
-            only_folds=[int(f) for f in folds] if folds else None,
-            plots_dir=plots_dir)
+        summary = cfm.analyse(run_dir, plots_dir=plots_dir)
         summary["slug"] = slug
         if with_plots and summary.get("ok"):
             cfm.prune_confusions(PAPERFOLD_CONFUSION_DIR)

@@ -1,6 +1,6 @@
 # 🧩 Pyllmits Documentation & User Guide
 
-_Last updated: August 16, 2026_
+_Last updated: August 19, 2026_
 
 > 📓 This guide is also available as an interactive [Google Colab notebook](https://colab.research.google.com/drive/1FRfuSSkJzP3bWz3_0Yi2PcraNPBK10_J?usp=sharing).
 
@@ -17,7 +17,8 @@ Both experiments run through the same interface, so testing OpenAI, Gemini, and 
 3. [Testing a model in Crafter](#3--testing-a-model-in-crafter)
 4. [Testing a model with Paper Folding](#4--testing-a-model-with-paper-folding)
 5. [Comparing experiments](#5--comparing-experiments)
-6. [Putting it to use](#6--putting-it-to-use)
+6. [Finding bias with confusion matrices](#6--finding-bias-with-confusion-matrices)
+7. [Putting it to use](#7--putting-it-to-use)
 
 ## 1 · Setup
 
@@ -84,10 +85,34 @@ What comes out, top to bottom:
 
 **Download CSV** gives you the whole thing long-form — a row per model per run plus run totals — for a notebook or a spreadsheet. **Download all charts** puts every PNG in one folder in your Downloads.
 
-## 6 · Putting it to use
+## 6 · Finding bias with confusion matrices
+
+Accuracy has one blind spot, and it's a bad one. On a five-way choice, a model that reasoned carefully and got unlucky scores 20%, and a model that answered "C" to everything also scores 20%. Every chart on the Paper Folding and Compare pages reads one bit off each trial — right or wrong — and that bit is exactly where the difference between those two models is thrown away. **Confusion** is the page that keeps it.
+
+A confusion matrix never collapses the two halves of a trial. The rows are what the answer actually was, the columns are what the model actually said, and the diagonal is where they agree. Everything off the diagonal is an error placed by *where it went*, which is a shape you can read — and a model with a favourite letter shows up as a column that stays dark all the way down, whatever the correct answer happened to be.
+
+Pick one experiment from the menu at the top. That's the only control on the page: everything below is built from that run, and nothing but confusion matrices appears.
+
+They come at three levels:
+
+- **Everyone together** — the experiment's own matrix, every model pooled. A lean here is a fact about the prompt rather than about any one model, since a bias shared by the whole field is unlikely to be a coincidence repeated seventeen times.
+- **By provider family** — the same matrix per family: OpenAI, Google, DeepSeek, Meta, Alibaba, Microsoft, and so on. Providers train on their own data with their own answer-formatting conventions, so a fallback letter is very often a family trait rather than a model one, and grouping is the only way to see that.
+- **Model by model** — where the habit actually lives. One model with a favourite letter disappears into a field average; here it's a matrix with a column running all the way down it.
+
+Every cell shows its share of the row with the trial count underneath, so a 100% built from three trials never looks like one built from three hundred. Reading across a row is "when the answer was this letter, here is what came back". Reading down a column is what the model reaches for, which is where a bias sits — and the three lines under each grid measure exactly that: how often each letter was **given as the answer**, how often it **was the correct answer**, and the **difference** between them. Those two numbers matching is what no bias looks like. The gap is the lean, in percentage points.
+
+Under each matrix is one sentence saying what it found, and it will happily report that it found nothing — on a test built to catch guessing, that's the good answer. There are four things it can say: the answers lean toward a letter (checked with a chi-square against the letters the puzzle actually handed out, not against a flat fifth each, so a model isn't charged for the puzzle's own sampling noise); they *may* lean, but the run is too short to settle it; no letter is favoured; or no letter is favoured but the diagonal is at chance, which means the answers are spread evenly because they're spread at random.
+
+Every matrix is also drawn as a chart, titled with the experiment it came from, plus two sheets that put a whole level on one page — every family, and every model. Those sheets are usually where the finding is: a vertical stripe in one panel next to clean diagonals in the others needs no explanation at all.
+
+**Download CSV** gives you every cell of every matrix with its count, row share and column marginals. **Download all** puts every PNG in one folder in your Downloads.
+
+## 7 · Putting it to use
 
 The point of all this is comparison: run the same setup against several models at once, and the graphs show you who's actually good at this versus who just talks a good game. Because everything (results, graphs, replays) is saved to disk the moment it's produced, you can walk away mid-run, come back later, add a model you forgot, or push the trial count higher — and pick up exactly where you left off instead of starting over.
 
 The Paper Folding side pushes that comparison one step further, in two directions. Run it once with real direction names, once with random placeholder words, and compare the two: a big drop in accuracy between them is the clearest signal you'll get that a model's "spatial reasoning" was leaning on the words themselves, not the geometry. That comparison is what the **average** graphs are for — one bar per run, so the difference between two setups is a number that moved rather than a dozen bars you have to re-read every time. Read the three together: accuracy holding steady while tokens and response time climb is still a result, and the opposite of "the wording made no difference". Check the spread line before believing any of them, though: an average that fell because every model fell is a real effect of the wording, while one that fell because a single model collapsed is a fact about that model. And run it across a fold range instead of one fixed difficulty: where each model's curve leaves the chance line tells you how much folding it can actually hold in its head, which a single accuracy number never will.
+
+Whatever those averages say, take one pass through **Confusion** before you believe them. Accuracy near the 20% chance line is ambiguous by construction — reasoning that failed and a model answering the same letter every time score identically — and one look down the columns of that model's matrix separates them. It is also the only page that can catch the failure mode where a wording leaves accuracy untouched but quietly moves *which* answers come out: a result about the words rather than about the geometry, and invisible everywhere else.
 
 Once you have more than two of those runs, stop carrying the numbers between graphs by hand and let **Compare** do it — that's the whole reason it exists. Reading five wordings off five separate sets of average bars means holding five numbers in your head and hoping they were computed over the same models; the Compare page puts them in one table, works out every difference against a baseline you choose, and refuses to call a difference real until it clears the noise in the trial counts you actually ran.

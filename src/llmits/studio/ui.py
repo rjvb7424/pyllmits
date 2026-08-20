@@ -395,73 +395,59 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .finding .ft{font-weight:600;font-size:14px;margin-bottom:3px}
   .finding .fx{color:var(--muted);font-size:13px;line-height:1.5}
   /* ---- Confusion tab ---------------------------------------------------
-     Reuses the Compare tab's furniture (run pickers, findings, sortable
-     tables, chart strip) because it asks the same kind of question of the same
-     runs. What is new here is the grid itself: a cell carries three numbers at
-     once - the share, the count it came from, and how far that share sits from
-     the rest of the column - and only the first two can be printed. The third
-     is the colour, on a scale centred at "this row behaves like every other",
-     so a page of unbiased grids reads as blank rather than as a wall of
-     evenly-shaded blue the reader has to compare by eye. */
+     One kind of object on this page: the matrix. It carries three numbers per
+     cell - the share of its row, the count behind that share, and whether the
+     cell is on the diagonal - and the column marginal underneath, which is
+     where a bias actually reads: how often a letter was given as the answer
+     against how often it was the right one. */
   #tab-confusion{--over:#e0716b; --under:#5b9bd5; --flat:var(--muted)}
-  .cfm-groups{display:flex;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s4)}
-  .cfm-chip{appearance:none;border:1px solid var(--line);background:var(--raised);color:var(--muted);
-    border-radius:999px;padding:5px 12px;font:600 12px var(--ui);cursor:pointer;min-height:0}
-  .cfm-chip:hover{color:var(--text);border-color:var(--line2)}
-  .cfm-chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-  .cfm-filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
-    gap:6px var(--s3);max-height:210px;overflow:auto;padding:var(--s2) var(--s3);
-    border:1px solid var(--line);border-radius:var(--radius);background:var(--raised)}
-  .cfm-filters label{display:flex;gap:8px;align-items:center;font:12px var(--mono);
-    color:var(--text);cursor:pointer;margin:0;text-transform:none;letter-spacing:0}
-  .cfm-filters input{width:15px;height:15px;min-height:0;margin:0;accent-color:var(--accent)}
-  /* Grid cells: monospace so columns of numbers line up, and the count set
-     small underneath the share it was computed from - a 100% built from one
-     trial and one built from three hundred must never look alike. */
-  /* Sized to its contents, not stretched to the card. A 5x5 confusion matrix
-     pulled out to full width is a row of numbers with an inch of empty cell
-     around each - the shape of the grid is half of what it is saying, and that
-     only reads when the cells are square-ish and next to each other. */
+  .cfm-level{margin-bottom:var(--s6)}
+  .cfm-level>.lt{font-weight:600;font-size:15px;margin-bottom:4px}
+  .cfm-level>.lc{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:840px;
+    margin-bottom:var(--s4)}
+  .cfm-matrix{margin-bottom:var(--s6);padding-bottom:var(--s4);border-bottom:1px solid var(--line)}
+  .cfm-matrix:last-child{border-bottom:0;margin-bottom:0}
+  .cfm-matrix .mt{font-weight:600;font-size:14px}
+  .cfm-matrix .ms{color:var(--muted);font-size:12px;font-family:var(--mono);margin:3px 0 var(--s3)}
+  /* The one-sentence reading of the matrix, coloured by what it found. */
+  .cfm-verdict{border-left:3px solid var(--line2);padding:6px var(--s3);margin-top:var(--s3);
+    color:var(--muted);font-size:12.5px;line-height:1.55;background:var(--raised);
+    border-radius:0 var(--radius) var(--radius) 0;max-width:840px}
+  .cfm-verdict.leaning{border-left-color:var(--over);color:var(--text)}
+  .cfm-verdict.unsettled{border-left-color:var(--accent)}
+  .cfm-verdict.chance{border-left-color:var(--accent)}
+  .cfm-verdict.even{border-left-color:#3fb27f}
+  /* Axis captions in two parts, exactly as the charts do it: what the axis is,
+     then a short line saying what that means in the puzzle. */
+  .cfm-axis{color:var(--muted);font-size:12px;margin-bottom:var(--s3);line-height:1.5}
+  .cfm-axis b{color:var(--text);font-weight:600}
+  .cfm-axis .ax{display:block}
+  .cfm-ycap{writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;
+    padding:0 6px 0 0;white-space:nowrap;color:var(--muted);font-size:11.5px;line-height:1.45}
+  .cfm-ycap b{color:var(--text);font-weight:600;font-size:12.5px}
+  .cfm-wrap{display:flex;align-items:stretch;gap:2px}
+  .cfm-xcap{text-align:center;color:var(--muted);font-size:11.5px;margin-top:var(--s2);
+    line-height:1.45}
+  .cfm-xcap b{display:block;color:var(--text);font-weight:600;font-size:12.5px}
   table.cfm{border-collapse:separate;border-spacing:0;width:auto;font-size:12.5px}
   table.cfm th,table.cfm td{padding:6px 9px;text-align:center;white-space:nowrap;
-    border-bottom:1px solid var(--line);min-width:66px}
-  table.cfm td.cell{width:78px}
-  table.cfm th{background:var(--raised);color:var(--muted);font:600 11px var(--ui);
-    text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:2;
+    border-bottom:1px solid var(--line);min-width:70px}
+  table.cfm td.cell{width:82px;font-family:var(--mono);font-weight:600;line-height:1.25}
+  table.cfm th{background:var(--raised);color:var(--muted);font:600 12px var(--ui);
     border-bottom:1px solid var(--line2)}
-  table.cfm th .colsub{display:block;font:400 10px var(--mono);text-transform:none;
-    letter-spacing:0;color:var(--faint)}
-  table.cfm td.name,table.cfm th.name{text-align:left;position:sticky;left:0;background:var(--surface);
-    z-index:1;font-family:var(--mono);font-size:11.5px;max-width:250px;overflow:hidden;
-    text-overflow:ellipsis;min-width:0}
-  table.cfm th.name{background:var(--raised);z-index:3}
-  table.cfm td.cell{font-family:var(--mono);font-weight:600;line-height:1.25}
+  table.cfm td.name,table.cfm th.name{text-align:right;font-family:var(--mono);
+    font-size:11.5px;color:var(--muted);min-width:0;padding-right:var(--s3)}
+  table.cfm td.name b{color:var(--text);font-size:14px;font-weight:700}
   table.cfm td .n{display:block;font-weight:400;font-size:10.5px;color:var(--muted);margin-top:1px}
   table.cfm td.diag{box-shadow:inset 0 0 0 2px #2e8b57}
-  /* Same convention as the PNGs: dashed past two standard deviations, solid
-     past three, red for more of that answer than expected and blue for less. */
-  table.cfm td.over{outline:2px dashed var(--over);outline-offset:-2px}
-  table.cfm td.under{outline:2px dashed var(--under);outline-offset:-2px}
-  table.cfm td.strong{outline-style:solid;outline-width:3px}
-  table.cfm td.rowsum{color:var(--muted);font-family:var(--mono);font-size:11.5px;
-    background:var(--surface)}
-  /* The summary columns are a margin note next to the grid, not part of it -
-     separated so the eye doesn't read them as one more answer column. */
-  table.cfm td.rowsum:first-of-type,table.cfm th.sumcol{box-shadow:inset 2px 0 0 var(--line2)}
-  .cfm-grid{margin-bottom:var(--s6)}
-  .cfm-grid .gt{font-weight:600;font-size:14.5px;margin-bottom:3px}
-  .cfm-grid .gc{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:820px;
-    margin-bottom:var(--s2)}
-  .cfm-grid .gl{color:var(--faint);font-size:11.5px;margin-bottom:var(--s3)}
-  .cfm-grid .gl b{color:var(--muted);font-weight:600}
-  .cfm-test{margin-top:var(--s2);color:var(--muted);font:12px var(--mono);line-height:1.6}
-  .cfm-test .verdict{font-weight:700}
-  .cfm-test .verdict.moved{color:var(--over)}
-  .cfm-test .verdict.still{color:#3fb27f}
-  .cfm-legend{display:flex;gap:var(--s4);flex-wrap:wrap;align-items:center;
-    color:var(--muted);font-size:12px;margin-top:var(--s3)}
-  .cfm-legend .sw{width:22px;height:12px;border-radius:2px;display:inline-block;
-    vertical-align:middle;margin-right:5px}
+  /* The column marginal: the same three lines the charts print under the grid. */
+  table.cfm tr.marg td{border-bottom:0;padding-top:3px;padding-bottom:3px;
+    font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  table.cfm tr.marg.first td{border-top:1px solid var(--line2);padding-top:var(--s2)}
+  table.cfm tr.marg td.given{color:var(--text)}
+  table.cfm tr.marg td.gap.over{color:var(--over);font-weight:700}
+  table.cfm tr.marg td.gap.under{color:var(--under);font-weight:700}
+  table.cfm tr.marg td.name{text-align:right;color:var(--faint);font-size:11px}
   .cfm-plots>figure{margin:0 0 var(--s6);text-align:center}
   .cfm-plots figcaption{color:var(--muted);font-size:12.5px;margin-top:var(--s2);
     max-width:760px;margin-left:auto;margin-right:auto;line-height:1.5}
@@ -910,58 +896,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div id="cmpBody"></div>
   </section>
 
-  <!-- CONFUSION - the same runs the Compare tab reads, but never collapsed to
-       right-or-wrong. Accuracy cannot tell a model that reasoned and got
-       unlucky from one that answered "C" to everything; a grid that keeps what
-       was asked and what was answered on separate axes can, which is the whole
-       reason this page exists beside the other two. -->
+  <!-- CONFUSION - one experiment, nothing but confusion matrices. Accuracy
+       cannot tell a model that reasoned and got unlucky from one that answered
+       "C" to everything; a grid that keeps what was asked and what was answered
+       on separate axes can, and that is the only thing this page shows. -->
   <section id="tab-confusion" class="hidden">
     <div class="between" style="margin-bottom:var(--s4)">
-      <div><h2>Confusion</h2><div class="sub">Every answer laid against everything that could have produced it: the letter that was correct, the model, the difficulty, where the hole was punched, which directions were folded, how much the model wrote. Accuracy says how often a model was right. These grids say what it did when it wasn&rsquo;t.</div></div>
+      <div><h2>Confusion</h2><div class="sub">Pick one experiment and read its confusion matrices: everyone together, then each provider family, then each model on its own. Rows are what the answer actually was, columns are what the model said, and the diagonal is where they agree &mdash; so an error stops being a tally and becomes a shape.</div></div>
     </div>
 
-    <div class="card"><h3>Runs to analyse</h3>
-      <div class="sub" style="margin-bottom:var(--s4)">Tick one run to look inside it, or several to put their answer patterns side by side. The order you tick them in is the order the by-experiment grids read down their rows.</div>
-      <div class="flex" style="margin-bottom:var(--s3)">
-        <button class="btn-secondary btn-sm" onclick="cfmSelectAll(true)">Select all</button>
-        <button class="btn-secondary btn-sm" onclick="cfmSelectAll(false)">Clear</button>
-        <span class="pill" id="cfmCount">0 selected</span>
-      </div>
-      <div id="cfmRunList"></div>
-
-      <div class="row" style="margin-top:var(--s4);max-width:560px">
-        <div>
-          <label for="cfmRestrict">Scope</label>
-          <select id="cfmRestrict">
-            <option value="1">Compare like for like (only shared models and folds)</option>
-            <option value="0">Use everything each run has</option>
-          </select>
+    <div class="card"><h3>Experiment</h3>
+      <div class="sub" style="margin-bottom:var(--s3)">One run at a time. Every matrix below is built from this run and nothing else.</div>
+      <div class="flex" style="align-items:flex-end">
+        <div style="flex:1;min-width:0">
+          <label for="cfmRun">Which experiment</label>
+          <select id="cfmRun" onchange="cfmRun()" style="width:100%;text-overflow:ellipsis"></select>
         </div>
-      </div>
-      <div class="sub">Only applies when more than one run is ticked. Like for like trims every run to the models and fold counts they all have, so a grid comparing wordings isn&rsquo;t really comparing which models happened to finish.</div>
-
-      <div id="cfmFilterBox" class="hidden">
-        <label style="margin-top:var(--s4)">Narrow it down</label>
-        <div class="sub" style="margin-top:0;margin-bottom:var(--s2)">Leave everything ticked for the whole picture. Untick models to chase one model&rsquo;s habit on its own, or difficulties to see whether a bias only appears once the puzzle gets hard.</div>
-        <div class="row" style="align-items:start">
-          <div>
-            <div class="sub" style="margin-top:0"><b>Models</b> &middot; <a href="#" onclick="cfmAllModels(true);return false">all</a> / <a href="#" onclick="cfmAllModels(false);return false">none</a></div>
-            <div class="cfm-filters" id="cfmModelFilter"></div>
-          </div>
-          <div>
-            <div class="sub" style="margin-top:0"><b>Difficulty</b> &middot; <a href="#" onclick="cfmAllFolds(true);return false">all</a> / <a href="#" onclick="cfmAllFolds(false);return false">none</a></div>
-            <div class="cfm-filters" id="cfmFoldFilter"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex" style="margin-top:var(--s4)">
-        <button class="btn-primary" id="cfmRunBtn" onclick="cfmRun()">&#9635;&nbsp;Build confusion matrices</button>
         <button class="btn-secondary" id="cfmCsvBtn" onclick="cfmDownloadCsv()" disabled
-          title="Every grid on this page as one long-form CSV: a row per cell, with its count, share, expected count and residual">Download CSV</button>
+          title="Every cell of every matrix as one CSV: the count, the share of its row, and the column marginals underneath">Download CSV</button>
         <button class="btn-secondary" id="cfmDownloadAllBtn" onclick="cfmDownloadAllGraphs()" disabled
-          title="Saves every confusion chart into one folder in your Downloads">Download all charts</button>
+          title="Saves every matrix into one folder in your Downloads">Download all</button>
       </div>
+      <div class="sub" id="cfmRunHint"></div>
     </div>
 
     <div id="cfmBody"></div>
@@ -2485,497 +2441,227 @@ async function cmpDownloadAllGraphs(){
   } finally { cmpSyncButtons(); }
 }
 
-// ---------- Confusion: what was answered, against everything that could explain it ----------
-// The Compare tab reads whole runs against each other; this one reads inside
-// the answers themselves. Everything numeric - the counts, the expected counts,
-// the residuals, every chi-square - is worked out server-side
-// (paperfold/confusion.py) so the tables here and the charts it draws can never
-// disagree. This file decides layout only, plus one thing the PNGs can't do:
-// let you flip the same grid between shares, raw counts and deviations without
-// redrawing anything.
+// ---------- Confusion: one experiment, nothing but matrices ----------
+// The Paper Folding and Compare tabs both read one bit off each trial - right
+// or wrong - and that bit is where a bias hides: on a five-way choice a model
+// that reasoned and got unlucky scores the same 20% as one that answers "C" to
+// everything. This page never collapses the two halves of a trial, and it shows
+// nothing else. Every number is worked out server-side (paperfold/confusion.py)
+// so the tables here and the charts it draws can never disagree.
 let CFM_RUNS=[];             // every paper-folding run on disk
-let CFM_PICKED=[];           // the names ticked, in the order they were ticked
 let CFM=null;                // the last analysis the server sent back
-let CFM_MODE='share';        // how a cell prints itself: share | count | deviation
-let CFM_DRILL='';            // which single-slice confusion the drill-down card shows
-let CFM_MODELS=null;         // model filter; null = everything the runs have
-let CFM_FOLDS=null;          // difficulty filter, same convention
-let CFM_SORT={col:null,asc:false};
+let CFM_MODE='share';        // how a cell prints itself: share | count
 
-// The groups the grids arrive in, in reading order, each with the question it
-// is there to answer. A grid whose group has nothing in it is skipped, so a
-// single-run analysis doesn't show an empty "by experiment" heading.
-const CFM_GROUPS=[
-  ['core','The test itself','Right and wrong kept on separate axes. Everything further down is a re-cut of these two grids.'],
-  ['model','Model by model','Where the answer habits live. A bias is almost always one model\'s, and the field average is where it hides.'],
-  ['difficulty','As the puzzle gets harder','Whether the answers stay spread once the geometry stops being tractable, or collapse onto a fallback.'],
-  ['spatial','The puzzle itself','Facts about the picture that say nothing about which letter is correct - so any grid here that isn\'t flat is the answer responding to the wrong thing.'],
-  ['sequence','Order and drift','Every trial is a fresh conversation with the model reset, so these should be featureless. Structure here means state is surviving where it shouldn\'t.'],
-  ['effort','Effort','How much the model wrote, against what it said and whether it was right.'],
-  ['wording','Experiment by experiment','The same puzzle under different names for the four directions - the finding this whole test was built for.'],
+// The three levels, in reading order, each with what it is for. Everything on
+// the page is one of these.
+const CFM_LEVELS=[
+  ['overall','Everyone together',
+   'The experiment\'s own matrix, every model pooled. A lean here is a fact about the prompt rather than about any one model - a bias shared by the whole field is unlikely to be a coincidence repeated seventeen times.'],
+  ['families','By provider family',
+   'The same matrix per family. Providers train on their own data with their own answer-formatting conventions, so a fallback letter is very often a family trait, and grouping is the only way to see that.'],
+  ['models','Model by model',
+   'Where the habit actually lives. One model with a favourite letter disappears into a field average; here it is a matrix with a column running all the way down it.'],
 ];
 
 const cfmNice=n=>String(n).replace(/_/g,' ').trim();
 const cfmPct=v=>v==null?'&ndash;':v.toFixed(0)+'%';
 
-// ---------- Confusion: picking runs ----------
+// ---------- Confusion: picking the experiment ----------
 async function cfmLoadRuns(){
   const r=await api('/api/paperfold/runs');
   CFM_RUNS=r.runs||[];
-  CFM_PICKED=CFM_PICKED.filter(n=>CFM_RUNS.some(x=>x.name==n));
-  cfmRenderRunList(); cfmSyncControls();
-  if(!CFM)$('cfmBody').innerHTML='<div class="empty"><b>Nothing analysed yet</b>'
-    +'Tick a run above and press Build. One run is enough - most of these grids look inside a '
-    +'single experiment. Tick several to compare the answer patterns different wordings produced.</div>';
-}
-
-function cfmRenderRunList(){
-  const el=$('cfmRunList');
+  const sel=$('cfmRun'), previous=sel.value;
   if(!CFM_RUNS.length){
-    el.innerHTML='<div class="empty"><b>No paper-folding runs yet</b>Run something on the Paper Folding tab first - this page reads finished runs.</div>';
+    sel.innerHTML='<option value="">no paper-folding runs yet</option>';
+    $('cfmRunHint').textContent='';
+    $('cfmBody').innerHTML='<div class="empty"><b>No paper-folding runs yet</b>'
+      +'Run something on the Paper Folding tab first - this page reads a finished run.</div>';
     return;
   }
-  el.innerHTML='<div class="cmp-runs">'+CFM_RUNS.map(r=>{
-    const on=CFM_PICKED.includes(r.name);
-    const folds=r.fold_min==r.fold_max?`${r.fold_min} folds`:`${r.fold_min}-${r.fold_max} folds`;
-    const mode={real:'real names',fixed:'custom words',random:'random words'}[r.direction_mode]||r.direction_mode;
-    return `<label class="cmp-run${on?' on':''}" data-run="${esc(r.name)}">
-      <input type="checkbox" ${on?'checked':''} data-run="${esc(r.name)}" onchange="cfmToggleRun(this.dataset.run)">
-      <div style="min-width:0">
-        <div class="n">${esc(cfmNice(r.name))}</div>
-        <div class="m">${esc(mode)} &middot; ${esc(folds)} &middot; ${r.models.length} model${r.models.length==1?'':'s'} &middot; ${r.num_trials??'?'} trials each</div>
-      </div></label>`;
-  }).join('')+'</div>';
+  sel.innerHTML=CFM_RUNS.map(x=>
+    `<option value="${esc(x.name)}">${esc(cfmNice(x.name))}</option>`).join('');
+  // Keep whatever was being looked at across a refresh, so reloading the run
+  // list doesn't silently move the page to a different experiment.
+  sel.value=CFM_RUNS.some(x=>x.name==previous)?previous:CFM_RUNS[0].name;
+  if(!CFM||CFM.experiment.name!=sel.value)cfmRun();
 }
 
-function cfmToggleRun(name){
-  const i=CFM_PICKED.indexOf(name);
-  if(i<0)CFM_PICKED.push(name); else CFM_PICKED.splice(i,1);
-  // The filters describe whatever is ticked right now, so a run coming or going
-  // rebuilds them. Anything still available keeps its tick.
-  cfmRenderRunList(); cfmSyncControls();
+function cfmRunHint(){
+  const r=CFM_RUNS.find(x=>x.name==$('cfmRun').value);
+  if(!r){$('cfmRunHint').textContent='';return;}
+  const folds=r.fold_min==r.fold_max?`${r.fold_min} folds`:`${r.fold_min}-${r.fold_max} folds`;
+  const mode={real:'real direction names',fixed:'custom placeholder words',
+              random:'a fresh set of random words every trial'}[r.direction_mode]||r.direction_mode;
+  $('cfmRunHint').textContent=`${mode} · ${folds} · ${r.models.length} model`
+    +`${r.models.length==1?'':'s'} · ${r.num_trials??'?'} trials each`;
 }
-function cfmSelectAll(on){
-  CFM_PICKED=on?CFM_RUNS.map(r=>r.name):[];
-  cfmRenderRunList(); cfmSyncControls();
-}
-
-// Which models and fold counts the ticked runs actually hold, so the filter
-// lists offer what can be asked for rather than everything that ever existed.
-function cfmAvailable(){
-  const picked=CFM_RUNS.filter(r=>CFM_PICKED.includes(r.name));
-  const models=new Set(), folds=new Set();
-  picked.forEach(r=>{(r.models||[]).forEach(m=>models.add(m.name));
-    (r.fold_counts||[]).forEach(f=>folds.add(f));});
-  return {models:[...models].sort(),folds:[...folds].sort((a,b)=>a-b)};
-}
-function cfmSyncControls(){
-  const n=CFM_PICKED.length;
-  $('cfmCount').textContent=n+' selected';
-  $('cfmRunBtn').disabled=n<1;
-  $('cfmRunBtn').title=n<1?'Tick at least one run':'';
-  const {models,folds}=cfmAvailable();
-  $('cfmFilterBox').classList.toggle('hidden',!n);
-  if(CFM_MODELS)CFM_MODELS=CFM_MODELS.filter(m=>models.includes(m));
-  if(CFM_FOLDS)CFM_FOLDS=CFM_FOLDS.filter(f=>folds.includes(f));
-  $('cfmModelFilter').innerHTML=models.map(m=>{
-    const on=!CFM_MODELS||CFM_MODELS.includes(m);
-    return `<label><input type="checkbox" ${on?'checked':''} value="${esc(m)}"
-      onchange="cfmToggleFilter('model',this.value,this.checked)"><span>${esc(m)}</span></label>`;}).join('')
-    ||'<div class="muted">no models yet</div>';
-  $('cfmFoldFilter').innerHTML=folds.map(f=>{
-    const on=!CFM_FOLDS||CFM_FOLDS.includes(f);
-    return `<label><input type="checkbox" ${on?'checked':''} value="${f}"
-      onchange="cfmToggleFilter('fold',this.value,this.checked)"><span>${f} folds</span></label>`;}).join('')
-    ||'<div class="muted">no difficulties yet</div>';
-}
-// null means "everything", which is not the same as "all of them ticked": a run
-// added later should be included by default, not silently left out because the
-// filter was frozen the last time the list was built.
-function cfmToggleFilter(kind,value,on){
-  const {models,folds}=cfmAvailable();
-  if(kind=='model'){
-    let sel=CFM_MODELS?CFM_MODELS.slice():models.slice();
-    sel=on?[...new Set(sel.concat([value]))]:sel.filter(m=>m!=value);
-    CFM_MODELS=sel.length==models.length?null:sel;
-  }else{
-    const f=+value;
-    let sel=CFM_FOLDS?CFM_FOLDS.slice():folds.slice();
-    sel=on?[...new Set(sel.concat([f]))]:sel.filter(x=>x!=f);
-    CFM_FOLDS=sel.length==folds.length?null:sel;
-  }
-  cfmSyncControls();
-}
-function cfmAllModels(on){CFM_MODELS=on?null:[];cfmSyncControls();}
-function cfmAllFolds(on){CFM_FOLDS=on?null:[];cfmSyncControls();}
 
 async function cfmRun(){
-  if(!CFM_PICKED.length){toast('Tick at least one run','err');return;}
-  if(CFM_MODELS&&!CFM_MODELS.length){toast('Tick at least one model','err');return;}
-  if(CFM_FOLDS&&!CFM_FOLDS.length){toast('Tick at least one difficulty','err');return;}
-  const btn=$('cfmRunBtn'); btn.disabled=true;
-  $('cfmBody').innerHTML='<div class="empty">Cutting '+CFM_PICKED.length+' run'
-    +(CFM_PICKED.length==1?'':'s')+' every way and drawing the charts&hellip;</div>';
-  try{
-    const r=await api('/api/paperfold/confusion','POST',{
-      runs:CFM_PICKED, restrict:$('cfmRestrict').value=='1',
-      models:CFM_MODELS, folds:CFM_FOLDS, plots:true});
-    if(!r.ok){
-      CFM=null; cfmSyncButtons();
-      $('cfmBody').innerHTML=`<div class="empty"><b>Nothing to show</b>${esc(r.error||'unknown error')}</div>`;
-      return;
-    }
-    CFM=r; CFM_SORT={col:null,asc:false};
-    CFM_DRILL=Object.keys(r.per_model||{})[0]||'';
-    cfmRender(); cfmSyncButtons();
-  } finally { btn.disabled=!CFM_PICKED.length; }
+  const name=$('cfmRun').value;
+  cfmRunHint();
+  if(!name)return;
+  $('cfmBody').innerHTML='<div class="empty">Building the matrices for '
+    +esc(cfmNice(name))+' and drawing the charts&hellip;</div>';
+  const r=await api('/api/paperfold/confusion','POST',{run:name,plots:true});
+  if(!r.ok){
+    CFM=null; cfmSyncButtons();
+    $('cfmBody').innerHTML=`<div class="empty"><b>Nothing to show</b>${esc(r.error||'unknown error')}</div>`;
+    return;
+  }
+  CFM=r; cfmRender(); cfmSyncButtons();
 }
 function cfmSyncButtons(){
   $('cfmCsvBtn').disabled=!CFM;
   $('cfmDownloadAllBtn').disabled=!(CFM&&CFM.plots&&CFM.plots.length);
 }
 
-// ---------- Confusion: cell colouring ----------
-// Two scales, both anchored so that "no colour" means "nothing to report".
-// A distribution cell is coloured by how far its share sits from what that
-// column runs at over the whole grid - so a page of rows that all behave the
-// same reads as blank, and the one row that doesn't is the only thing with
-// colour on it. Colouring by the share itself would paint every ordinary row
-// the same mid-blue and leave the reader comparing shades by eye.
-function cfmDevHeat(dev,limit){
-  if(dev==null)return 'transparent';
-  const m=limit?Math.min(1,Math.abs(dev)/limit):0;
-  if(m<0.03)return 'transparent';
-  return `rgba(${dev>0?'224,113,107':'91,155,213'},${(0.10+0.55*m).toFixed(3)})`;
-}
-// Accuracy runs on its own fixed scale with the chance line as the pivot -
-// below a fifth correct is not a weak result, it is no result.
-function cfmAccHeat(v){
-  if(v==null)return 'transparent';
-  if(v<=20)return `rgba(224,113,107,${(0.20+0.30*(20-v)/20).toFixed(3)})`;
-  return `rgba(63,178,127,${(0.06+0.50*Math.min(1,(v-20)/80)).toFixed(3)})`;
-}
-// The colour scale stops at the 90th percentile of the deviations rather than
-// the largest one: a single model answering 84% "A" would otherwise set the
-// contrast for the whole grid and leave every other row white.
-function cfmDevLimit(devs){
-  const mags=devs.filter(v=>v!=null).map(Math.abs).sort((a,b)=>a-b);
-  if(!mags.length)return 8;
-  return Math.max(8,mags[Math.min(mags.length-1,Math.floor(0.9*mags.length))]);
+// ---------- Confusion: one matrix as a table ----------
+// Cells are shaded by their share of the row, the standard confusion-matrix
+// reading: across a row is "when the answer was this, here is what came back".
+// The bias reads down a column instead, which is what the marginal under the
+// grid is for.
+function cfmHeat(share){
+  if(share==null)return 'transparent';
+  if(share<2)return 'transparent';
+  return `rgba(58,124,196,${(0.08+0.62*Math.min(1,share/100)).toFixed(3)})`;
 }
 
-function cfmTestLine(g){
-  const t=g.chi2;
-  if(!t)return '<div class="cfm-test">Too few rows or columns with anything in them to test.</div>';
-  const moved=t.p<0.01&&t.cramers_v>=0.05;
-  const unit=g.kind=='accuracy'?'row':'model';
-  const how=t.stratified
-    ?`${t.strata==1?'the one '+unit+' with anything to test':'each of the '+t.strata+' '+unit+'s'} tested on its own`
-      +(t.strata==1?'':', and the results summed')
-    :'all trials pooled';
-  const p=t.p<0.0001?'p &lt; 0.0001':'p = '+(t.p<0.001?t.p.toFixed(5):t.p.toFixed(3));
-  let line=`<div class="cfm-test">&chi;&sup2; ${t.stat.toLocaleString()} on ${t.df} df &middot; ${p} &middot; `
-    +`V ${t.cramers_v.toFixed(3)} <span class="faint">(${how})</span> &rarr; `
-    +`<span class="verdict ${moved?'moved':'still'}">${moved?'the rows differ beyond noise':'within noise of identical rows'}</span>`;
-  // The two tests disagreeing is a finding of its own, not a caveat: it means
-  // the grid's shape is the field's mixture of habits rather than anything a
-  // single model is doing.
-  if(g.pooled_chi2&&(g.pooled_chi2.p<0.01)!=(t.p<0.01))
-    line+=`<div style="margin-top:4px">Pooling every model together instead would say `
-      +`p ${g.pooled_chi2.p<0.0001?'&lt; 0.0001':'= '+g.pooled_chi2.p.toFixed(3)} - that gap is the `
-      +`field's mixture of letter habits, not this grid.</div>`;
-  if(g.note)line+=`<div style="margin-top:4px">${esc(g.note)}</div>`;
-  return line+'</div>';
-}
-
-// ---------- Confusion: one grid as a table ----------
-function cfmDistGrid(g){
-  const n=g.n||1;
-  const field=g.col_totals.map(c=>100*c/n);
-  const shares=g.counts.map((row,i)=>row.map(c=>g.row_totals[i]?100*c/g.row_totals[i]:null));
-  const devs=shares.map((row,i)=>row.map((v,j)=>v==null?null:v-field[j]));
-  const limit=cfmDevLimit([].concat(...devs));
-  const showAcc=(g.row_accuracy||[]).some(v=>v!=null);
-
+function cfmMatrix(m){
+  const cols=m.cols;
   const head=`<tr><th class="name"></th>`
-    +g.cols.map((c,j)=>`<th>${esc(c)}<span class="colsub">${field[j].toFixed(0)}% overall</span></th>`).join('')
-    +`<th class="sumcol">Trials</th>${showAcc?'<th>Correct</th>':''}</tr>`;
+    +cols.map(c=>`<th>${c=='?'?'no letter':esc(c)}</th>`).join('')+'</tr>';
 
-  const body=g.rows.map((r,i)=>{
-    const tds=g.cols.map((c,j)=>{
-      const share=shares[i][j], dev=devs[i][j], res=g.residuals[i][j], count=g.counts[i][j];
-      if(share==null)return '<td class="cell flat">&ndash;</td>';
-      const cls=['cell'];
-      if(g.symmetric&&r==c)cls.push('diag');
-      // Rows too thin to mean anything keep their numbers but are never marked:
-      // one trial will happily produce a 100% and an enormous residual.
-      if(g.rings!==false&&g.row_totals[i]>=20&&Math.abs(res)>=2)
-        cls.push(res>0?'over':'under',Math.abs(res)>=3?'strong':'');
-      const main=CFM_MODE=='count'?count.toLocaleString()
-        :CFM_MODE=='deviation'?(dev>=0?'+':'')+dev.toFixed(1)
-        :share.toFixed(0)+'%';
-      const sub=CFM_MODE=='count'?share.toFixed(0)+'%'
-        :CFM_MODE=='deviation'?'r '+(res>=0?'+':'')+res.toFixed(1)
-        :count.toLocaleString();
-      return `<td class="${cls.join(' ')}" style="background:${cfmDevHeat(dev,limit)}"
-        title="${esc(r)} &rarr; ${esc(c)}: ${count.toLocaleString()} trials, ${share.toFixed(1)}% of the row, expected ${g.expected[i][j].toFixed(1)} (residual ${res.toFixed(1)})"
+  const body=m.rows.map((letter,i)=>{
+    const tds=cols.map((c,j)=>{
+      const share=m.row_share[i][j], count=m.counts[i][j];
+      if(share==null)return '<td class="cell">&ndash;</td>';
+      const main=CFM_MODE=='count'?count.toLocaleString():share.toFixed(0)+'%';
+      const sub=CFM_MODE=='count'?share.toFixed(0)+'%':count.toLocaleString();
+      return `<td class="cell${letter==c?' diag':''}" style="background:${cfmHeat(share)}"
+        title="The answer was ${esc(letter)}, the model said ${esc(c)}: ${count.toLocaleString()} trials, ${share.toFixed(1)}% of that row"
         >${main}<span class="n">${sub}</span></td>`;
     }).join('');
-    return `<tr><td class="name" title="${esc(r)}">${esc(r)}</td>${tds}`
-      +`<td class="rowsum">${g.row_totals[i].toLocaleString()}</td>`
-      +(showAcc?`<td class="rowsum">${cfmPct((g.row_accuracy||[])[i])}</td>`:'')+'</tr>';
+    return `<tr><td class="name"><b>${esc(letter)}</b><span class="n">`
+      +`${m.row_totals[i].toLocaleString()} trials</span></td>${tds}</tr>`;
   }).join('');
 
-  return `<div class="cmp-scroll"><table class="cfm"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  // The column marginal: how often each letter was given as the answer against
+  // how often it was the right one. Those two matching is what no bias looks
+  // like, and the gap between them is the lean in percentage points.
+  const marg=(cls,label,cellFor)=>`<tr class="marg ${cls}">`
+    +`<td class="name">${label}</td>`
+    +cols.map(c=>cellFor(c)).join('')+'</tr>';
+  const strong=g=>Math.abs(g)>=5;
+  const marginal=
+     marg('first given','given as the answer',c=>
+       `<td class="given">${m.answered_share[c]==null?'&ndash;':m.answered_share[c].toFixed(0)+'%'}</td>`)
+    +marg('','was the correct answer',c=>
+       `<td>${m.correct_share[c]==null?'&ndash;':m.correct_share[c].toFixed(0)+'%'}</td>`)
+    +marg('','difference',c=>{
+       const g=m.lean[c];
+       if(g==null)return '<td class="gap">&ndash;</td>';
+       return `<td class="gap${strong(g)?(g>0?' over':' under'):''}">${g>=0?'+':''}${g.toFixed(0)}</td>`;});
+
+  return `<div class="cfm-wrap">
+      <div class="cfm-ycap"><b>What the answer actually was</b><br>the letter matching the paper once it is unfolded</div>
+      <div class="cmp-scroll" style="max-height:none">
+        <table class="cfm"><thead>${head}</thead><tbody>${body}${marginal}</tbody></table>
+      </div>
+    </div>
+    <div class="cfm-xcap"><b>What the model answered</b>the letter it picked out of the five candidates it was shown</div>`;
 }
 
-function cfmAccGrid(g){
-  const head=`<tr><th class="name"></th>`
-    +g.cols.map(c=>`<th>${esc(c)}</th>`).join('')+'<th class="sumcol">All</th></tr>';
-  const body=g.rows.map((r,i)=>{
-    const tds=g.cols.map((c,j)=>{
-      const v=g.values[i][j], total=g.totals[i][j];
-      if(v==null)return '<td class="cell flat">&ndash;</td>';
-      return `<td class="cell" style="background:${cfmAccHeat(v)}"
-        title="${esc(r)} / ${esc(c)}: ${g.hits[i][j].toLocaleString()} of ${total.toLocaleString()} correct"
-        >${v.toFixed(0)}%<span class="n">n=${total.toLocaleString()}</span></td>`;
-    }).join('');
-    const rowTotal=g.totals[i].reduce((a,b)=>a+b,0);
-    const rowHits=g.hits[i].reduce((a,b)=>a+b,0);
-    return `<tr><td class="name" title="${esc(r)}">${esc(r)}</td>${tds}`
-      +`<td class="rowsum">${rowTotal?(100*rowHits/rowTotal).toFixed(0)+'%':'&ndash;'}`
-      +`<span class="n">n=${rowTotal.toLocaleString()}</span></td></tr>`;
-  }).join('');
-  // Every row counts once in this last line, so a column can't be dragged by
-  // whichever model happened to answer most of its trials.
-  const foot=(g.column_mean||[]).some(v=>v!=null)
-    ? `<tr><td class="name"><b>Average of the rows</b></td>`
-      +(g.column_mean||[]).map(v=>`<td class="rowsum">${cfmPct(v)}</td>`).join('')
-      +'<td class="rowsum"></td></tr>' : '';
-  return `<div class="cmp-scroll"><table class="cfm"><thead>${head}</thead>`
-    +`<tbody>${body}${foot}</tbody></table></div>`;
-}
-
-function cfmGrid(g){
-  return `<div class="cfm-grid">
-    <div class="gt">${esc(g.title)}</div>
-    <div class="gc">${esc(g.caption)}</div>
-    <div class="gl"><b>Down:</b> ${esc(g.row_label)} &nbsp;&middot;&nbsp; <b>Across:</b> ${esc(g.col_label)}</div>
-    ${g.kind=='accuracy'?cfmAccGrid(g):cfmDistGrid(g)}
-    ${cfmTestLine(g)}</div>`;
+function cfmMatrixCard(m){
+  const models=m.level=='family'
+    ? `${m.models.length} model${m.models.length==1?'':'s'}: ${esc(m.models.join(', '))}`
+    : m.level=='all' ? `all ${m.models.length} models pooled together` : 'on its own';
+  return `<div class="cfm-matrix">
+    <div class="mt">${esc(m.level=='model'?m.name:m.name)}</div>
+    <div class="ms">${m.n.toLocaleString()} trials &middot; ${cfmPct(m.accuracy)} correct
+      &middot; ${models}${m.no_answer?` &middot; ${m.no_answer} with no readable letter`:''}</div>
+    ${cfmMatrix(m)}
+    <div class="cfm-verdict ${esc(m.status)}">${esc(m.verdict)}</div>
+  </div>`;
 }
 
 // ---------- Confusion: rendering ----------
 function cfmRender(){
-  $('cfmBody').innerHTML=
-    cfmScopeCard()+cfmFindingsSection()+cfmModelSection()+
-    cfmDrillSection()+cfmGridsSection()+cfmPlotsSection();
-  cfmBindSort();
-}
-
-function cfmScopeCard(){
-  const s=CFM.scope;
-  const answered=Object.entries(s.answered||{});
-  const total=answered.reduce((a,[,v])=>a+v,0)||1;
-  const strip=answered.map(([l,v])=>
-    `<span class="pill" title="${v.toLocaleString()} answers">${l} ${(100*v/total).toFixed(0)}%</span>`).join(' ');
-  let notes='';
-  if(s.models_dropped.length)
-    notes+=`<div class="sub"><b>${s.models_dropped.length} model${s.models_dropped.length==1?'':'s'} left out</b> - ${esc(s.models_dropped.slice(0,5).join(', '))}${s.models_dropped.length>5?', &hellip;':''}. Either not every selected run has scored trials for them, or you unticked them above.</div>`;
-  const dropped=Object.entries(s.folds_dropped||{});
-  if(dropped.length)
-    notes+=`<div class="sub"><b>Difficulties left out</b> - ${dropped.map(([n,f])=>esc(cfmNice(n))+' also ran at '+f.join(', ')+' folds').join('; ')}.</div>`;
-  return `<div class="card">
+  const e=CFM.experiment;
+  const mode=`<select onchange="CFM_MODE=this.value;cfmRender()" aria-label="What each cell shows">
+      <option value="share"${CFM_MODE=='share'?' selected':''}>Cells: share of the row</option>
+      <option value="count"${CFM_MODE=='count'?' selected':''}>Cells: trial counts</option>
+    </select>`;
+  const header=`<div class="card">
     <div class="between" style="margin-bottom:var(--s3)">
-      <h3 style="margin:0">What is in these grids</h3>
-      <div class="flex">
-        <select onchange="CFM_MODE=this.value;cfmRender()" aria-label="What each cell shows">
-          <option value="share"${CFM_MODE=='share'?' selected':''}>Cells: share of the row</option>
-          <option value="count"${CFM_MODE=='count'?' selected':''}>Cells: raw trial counts</option>
-          <option value="deviation"${CFM_MODE=='deviation'?' selected':''}>Cells: deviation from expected</option>
-        </select>
-      </div>
+      <h3 style="margin:0">${esc(e.display)}</h3>
+      <div class="flex">${mode}</div>
     </div>
-    <div class="sub" style="margin-bottom:var(--s3)">
-      ${s.trials.toLocaleString()} answered trials &middot; ${s.runs.length} run${s.runs.length==1?'':'s'} &middot;
-      ${s.models_used.length} model${s.models_used.length==1?'':'s'} &middot;
-      ${s.folds_used.join(', ')} fold${s.folds_used.length==1?'':'s'} &middot;
-      ${s.accuracy}% correct against 20% for guessing
-      ${s.no_answer?` &middot; <b>${s.no_answer.toLocaleString()} with no readable letter</b>`:''}
-    </div>
-    <div class="sub" style="margin-bottom:var(--s3)">Where the answers went: ${strip} &middot;
-      ${s.skew} points of skew away from an even fifth each (0 is perfectly even, 80 is every answer on one letter).</div>
-    ${notes||'<div class="sub">Nothing had to be left out - every selected run has the same models and difficulties.</div>'}
+    <div class="sub">${e.trials.toLocaleString()} answered trials &middot;
+      ${e.models.length} model${e.models.length==1?'':'s'} in
+      ${Object.keys(e.families).length} famil${Object.keys(e.families).length==1?'y':'ies'} &middot;
+      ${e.fold_counts.join(', ')} fold${e.fold_counts.length==1?'':'s'} &middot;
+      ${e.accuracy}% correct against 20% for guessing</div>
+    <div class="sub">Read a row for "when the answer was this letter, here is what came back".
+      Read a column for what the model reaches for &ndash; that is where a bias sits, and the
+      three lines under each grid measure it: how often a letter was given as the answer,
+      how often it was the right one, and the gap between them.</div>
   </div>`;
+
+  const sections=CFM_LEVELS.map(([key,title,blurb])=>{
+    const list=key=='overall'?[CFM.overall]:CFM[key];
+    if(!list||!list.length)return '';
+    if(key=='families'&&list.length<2)return '';   // one family is the overall matrix again
+    return `<div class="card"><div class="cfm-level">
+      <div class="lt">${esc(title)}</div>
+      <div class="lc">${esc(blurb)}</div>
+      ${list.map(cfmMatrixCard).join('')}</div></div>`;
+  }).join('');
+
+  $('cfmBody').innerHTML=header+sections+cfmPlotsSection();
 }
 
-function cfmFindingsSection(){
-  return `<div class="card"><h3>What the grids say</h3>
-    <div class="sub" style="margin-bottom:var(--s4)">Read straight off the numbers below. Every claim is checked against noise first, and against effect size after that - "no bias found" is a result this page can return, and on a test built to catch guessing it is the good one.</div>
-    ${CFM.findings.map(f=>`<div class="finding ${esc(f.kind)}">
-      <div class="ft">${esc(f.title)}</div><div class="fx">${esc(f.text)}</div></div>`).join('')}</div>`;
-}
-
-function cfmModelSection(){
-  const rows=Object.entries(CFM.per_model).map(([m,s])=>{
-    const p=s.marginal_test?s.marginal_test.p:null;
-    const leaning=p!=null&&p<0.01&&s.skew>=8;
-    return {sort:[m,s.trials,s.accuracy??-1,s.skew,s.top_letter||'',s.top_share??-1,p==null?2:p],
-      html:`<tr>
-      <td class="name" title="${esc(m)}">${esc(m)}</td>
-      <td>${s.trials.toLocaleString()}</td>
-      <td>${cfmPct(s.accuracy)}</td>
-      <td>${s.skew.toFixed(0)}</td>
-      <td><b>${esc(s.top_letter||'-')}</b></td>
-      <td>${cfmPct(s.top_share)}</td>
-      <td>${p==null?'<span class="flat">&ndash;</span>':(p<0.0001?'&lt; 0.0001':p.toFixed(4))}</td>
-      <td>${leaning?'<span class="pill danger">favourite letter</span>':'<span class="flat">even</span>'}</td></tr>`};
-  });
-  const head=['Model','Trials','Correct','Skew','Top letter','Its share','p vs the letters it was shown','Verdict'];
-  return `<div class="card"><h3>Every model's answer habit</h3>
-    <div class="sub" style="margin-bottom:var(--s4)">Click any column to sort. "Skew" is how far that model's answers sit from an even fifth each; the p-value tests its answer spread against the letters the puzzle actually gave it, so a low one means the preference isn't the luck of the draw. A model can sit at the top of this table for accuracy and still have a favourite - check the wrong-answers-only grid below for it.</div>
-    ${cfmTable(head,rows)}</div>`;
-}
-
-// The drill-down: the same 5x5 grid for one model, one experiment or one
-// difficulty at a time. The page-wide grids answer "is there a bias"; this
-// answers "show me that one", which is the next thing you always want.
-function cfmDrillSection(){
-  const groups=[['Model',CFM.per_model],['Experiment',CFM.per_run],['Difficulty',CFM.per_folds]];
-  const options=groups.filter(([,src])=>src&&Object.keys(src).length).map(([label,src])=>
-    `<optgroup label="${label}">`+Object.keys(src).map(k=>
-      `<option value="${esc(k)}"${k==CFM_DRILL?' selected':''}>${esc(cfmNice(k))}</option>`).join('')+'</optgroup>').join('');
-  if(!options)return '';
-  let found=null;
-  groups.forEach(([,src])=>{if(src&&src[CFM_DRILL])found=src[CFM_DRILL];});
-  if(!found){CFM_DRILL=Object.keys(CFM.per_model)[0]||'';found=CFM.per_model[CFM_DRILL];}
-  if(!found)return '';
-  return `<div class="card"><div class="between" style="margin-bottom:var(--s3)">
-      <div><h3 style="margin:0">One slice on its own</h3>
-        <div class="sub">${found.trials.toLocaleString()} trials &middot; ${cfmPct(found.accuracy)} correct &middot;
-        ${found.skew} points of skew &middot; most-picked letter ${esc(found.top_letter||'-')} at ${cfmPct(found.top_share)}
-        ${found.no_answer?` &middot; ${found.no_answer} with no readable letter`:''}</div></div>
-      <select onchange="CFM_DRILL=this.value;cfmRender()" style="width:280px;text-overflow:ellipsis"
-        aria-label="Which slice to show">${options}</select>
-    </div>
-    ${cfmGrid(found.confusion)}</div>`;
-}
-
-function cfmGridsSection(){
-  return CFM_GROUPS.map(([group,title,blurb])=>{
-    const grids=CFM.grids.filter(g=>g.group==group);
-    if(!grids.length)return '';
-    return `<div class="card"><h3>${esc(title)}</h3>
-      <div class="sub" style="margin-bottom:var(--s4)">${esc(blurb)}</div>
-      ${grids.map(cfmGrid).join('')}</div>`;
-  }).join('')+cfmLegend();
-}
-
-function cfmLegend(){
-  return `<div class="card"><h3>How to read a cell</h3>
-    <div class="cfm-legend">
-      <span><span class="sw" style="background:rgba(224,113,107,.5)"></span>more of this answer than the column runs at overall</span>
-      <span><span class="sw" style="background:rgba(91,155,213,.5)"></span>less</span>
-      <span><span class="sw" style="background:transparent;border:1px solid var(--line2)"></span>the same, which is what no bias looks like</span>
-      <span><span class="sw" style="background:transparent;outline:2px dashed #e0716b;outline-offset:-2px"></span>over two standard deviations out</span>
-      <span><span class="sw" style="background:transparent;outline:3px solid #e0716b;outline-offset:-2px"></span>over three &ndash; the cells worth chasing</span>
-      <span><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px #2e8b57"></span>the diagonal - a correct answer</span>
-    </div>
-    <div class="sub" style="margin-top:var(--s3)">Rows under 20 trials keep their numbers but are never marked: one trial will happily produce a 100% and an enormous residual. Colour is always the deviation, whichever of the three readings the cells are printing.</div>
-  </div>`;
-}
-
-// ---------- Confusion: sortable model table ----------
-function cfmTable(head,rows){
-  const s=CFM_SORT;
-  if(s.col!=null){
-    rows=rows.slice().sort((a,b)=>{
-      const x=a.sort[s.col],y=b.sort[s.col];
-      const c=(typeof x=='string'||typeof y=='string')?String(x).localeCompare(String(y)):(x-y);
-      return s.asc?c:-c;
-    });
-  }
-  const ths=head.map((h,i)=>`<th class="${i==0?'name ':''}${s.col==i?'sorted '+(s.asc?'asc':''):''}"
-    data-col="${i}">${esc(h)}</th>`).join('');
-  return `<div class="cmp-scroll"><table class="cmp"><thead><tr>${ths}</tr></thead>
-    <tbody>${rows.map(r=>r.html).join('')}</tbody></table></div>`;
-}
-function cfmBindSort(){
-  document.querySelectorAll('#cfmBody table.cmp th[data-col]').forEach(th=>{
-    th.onclick=()=>{
-      const col=+th.dataset.col;
-      CFM_SORT=(CFM_SORT.col==col)?{col,asc:!CFM_SORT.asc}:{col,asc:false};
-      cfmRender();
-    };
-  });
-}
-
-// ---------- Confusion: charts ----------
-const CFM_CAPTIONS={
-  'answer_confusion.png':'The whole test in one grid. The diagonal is every trial answered correctly; a column dark all the way down is a letter the field drifts toward whatever the right answer was.',
-  'error_flow.png':'The same grid with the correct answers removed, so only the shape of the mistakes is left. Reasoning that failed spreads evenly here; a fallback letter shows up as a stripe.',
-  'model_answer_share.png':'One row per model. A row that matches the column shares underneath is a model spreading its answers the way the puzzle does; a row with one heavy column has a favourite.',
-  'model_error_share.png':'The purest per-model bias signal on the page: with the correct answers taken out, whatever is left of a row is where that model goes when it does not know.',
-  'model_letter_recall.png':'Accuracy split by which letter happened to be correct. The puzzle picks it at random, so a model reasoning about the paper should score flat across its row.',
-  'folds_answer_share.png':'Reading down the rows is watching the field run out of road - the answers collapse toward a letter or two, usually a fold before the accuracy curve says anything.',
-  'folds_letter_recall.png':'If the letter is irrelevant, as it should be, every row here is flat and only the rows themselves fall away as the folds pile up.',
-  'model_folds_accuracy.png':'The difficulty curve as a grid. Where a row reaches 20% is how much folding that model could hold in its head; a row that starts there never had it.',
-  'punch_quadrant_answer_share.png':'Where the hole was punched says nothing about which letter is correct, so these four rows should be identical. Where they are not, the picture is steering the answer.',
-  'punch_quadrant_accuracy.png':'The same four quarters as accuracy. One corner materially worse than the others is a spatial blind spot - the same puzzle, solved less often depending on where it had to be read from.',
-  'model_quadrant_accuracy.png':'Blind spots are usually one model\'s, not the field\'s. This is the row-by-row version of the grid above.',
-  'fold_direction_answer_share.png':'One row per direction that appeared in the fold plan. Rows overlap, so read it for differences between rows rather than for the totals.',
-  'fold_plan_accuracy.png':'Whether starting a plan one way, or finishing it another, made the same amount of folding harder. Every cell is the same difficulty, so any structure is the model\'s.',
-  'shape_accuracy.png':'An odd number of folds leaves the sheet twice as long on one axis, and which axis is random. A model that does better on wide sheets than tall ones is reading the grid, not the geometry.',
-  'answer_transition.png':'Every trial is a fresh conversation, so this grid should be featureless. A heavy diagonal means answers are sticking to each other.',
-  'phase_answer_share.png':'The run in fifths. A lean that grows toward the end is drift from outside the experiment, and an accuracy average would never show it.',
-  'effort_answer_share.png':'Trials in quarters by token spend, within each model. The cheap quarter is where giving up lives.',
-  'model_effort_accuracy.png':'Whether thinking longer bought anything. A row that falls left to right is a model that writes most when it is lost.',
-  'run_answer_share.png':'One row per run, same models underneath each. The puzzle never changed between these rows - only what the four directions were called.',
-  'run_letter_recall.png':'Whether a wording made the whole puzzle harder or only made one answer harder to reach.',
-  'model_confusion_sheet.png':'Every model\'s own confusion matrix on one page. A vertical stripe in a panel is that model\'s favourite letter, and it is unmistakable next to the panels that do not have one.',
-  'folds_confusion_sheet.png':'The same matrix at each difficulty. Watch a column darken as the puzzle gets harder: that is the field falling back on a letter as the geometry runs out.',
-  'run_confusion_sheet.png':'One panel per experiment. The puzzle is identical across these - only the direction words changed.',
-};
 function cfmPlotsSection(){
-  if(!CFM.plots||!CFM.plots.length)
-    return '<div class="card"><h3>Charts</h3><div class="empty">No charts were produced for this selection.</div></div>';
+  if(!CFM.plots||!CFM.plots.length)return '';
   const bust=Date.now();
-  return `<div class="card"><h3>Charts</h3>
-    <div class="sub" style="margin-bottom:var(--s4)">The same grids as pictures, drawn fresh for this exact selection - the version to put in a write-up, since each one carries its own scope and statistics.</div>
-    <div class="cfm-plots">${CFM.plots.map(f=>`<figure>
+  // The two sheets first: a bias is a difference between panels, and that is
+  // only visible with the panels side by side.
+  const order=CFM.plots.slice().sort((a,b)=>
+    (a.startsWith('sheet_')?0:1)-(b.startsWith('sheet_')?0:1));
+  const caption=f=>
+    f=='sheet_by_model.png'?'Every model on one page. A vertical stripe is a model with a favourite letter, and it is unmistakable next to the panels that do not have one.'
+    :f=='sheet_by_family.png'?'Every provider family on one page. Green rings the diagonal, so colour anywhere else in one column is a letter that family reaches for.'
+    :'';
+  return `<div class="card"><h3>The same matrices as charts</h3>
+    <div class="sub" style="margin-bottom:var(--s4)">Drawn fresh for this experiment. These are the version to put in a write-up &ndash; each one names the experiment it came from and carries its own reading underneath.</div>
+    <div class="cfm-plots">${order.map(f=>`<figure>
       <img class="plot" alt="${esc(f)}" src="/api/paperfold/confusion/plot?slug=${encodeURIComponent(CFM.slug)}&file=${encodeURIComponent(f)}&_=${bust}">
-      ${CFM_CAPTIONS[f]?`<figcaption>${esc(CFM_CAPTIONS[f])}</figcaption>`:''}</figure>`).join('')}</div></div>`;
+      ${caption(f)?`<figcaption>${esc(caption(f))}</figcaption>`:''}</figure>`).join('')}</div></div>`;
 }
 
 // ---------- Confusion: exports ----------
-// One row per cell of every grid, with the count, the share, the expected count
-// and the residual it was judged on - so a claim made on this page can be
-// re-checked in a notebook without retyping anything off the screen.
+// One row per cell of every matrix, plus the column marginals, so a claim made
+// on this page can be re-checked in a notebook without retyping it off screen.
 function cfmDownloadCsv(){
-  if(!CFM){toast('Build the matrices first','err');return;}
+  if(!CFM){toast('Pick an experiment first','err');return;}
   const q=v=>{const s=v==null?'':String(v);
     return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
-  const lines=[['grid','kind','row_label','col_label','row','column','count','row_share_pct',
-                'expected_count','adjusted_residual','accuracy_pct','trials',
-                'chi2','df','p','cramers_v','stratified'].join(',')];
-  const push=(g,row,col,vals)=>lines.push([g.key,g.kind,g.row_label,g.col_label,row,col,
-    ...vals, g.chi2?g.chi2.stat:'', g.chi2?g.chi2.df:'', g.chi2?g.chi2.p:'',
-    g.chi2?g.chi2.cramers_v:'', g.chi2&&g.chi2.stratified?'yes':'no'].map(q).join(','));
-  for(const g of CFM.grids){
-    g.rows.forEach((r,i)=>g.cols.forEach((c,j)=>{
-      if(g.kind=='accuracy')
-        push(g,r,c,['','','','',g.values[i][j]==null?'':g.values[i][j],g.totals[i][j]]);
-      else{
-        const share=g.row_totals[i]?100*g.counts[i][j]/g.row_totals[i]:'';
-        push(g,r,c,[g.counts[i][j],share===''?'':share.toFixed(2),
-          g.expected[i][j],g.residuals[i][j],'',g.row_totals[i]]);
-      }
+  const lines=[['experiment','level','matrix','models','trials','accuracy_pct',
+                'correct_answer','model_answer','count','share_of_row_pct',
+                'letter_given_pct','letter_was_correct_pct','difference_pts',
+                'status','skew','bias_p'].join(',')];
+  for(const m of [CFM.overall,...CFM.families,...CFM.models]){
+    const p=m.bias_test?m.bias_test.p:'';
+    m.rows.forEach((truth,i)=>m.cols.forEach((given,j)=>{
+      lines.push([CFM.experiment.name,m.level,m.name,m.models.join(' '),m.n,m.accuracy,
+        truth,given,m.counts[i][j],m.row_share[i][j],
+        m.answered_share[given]??'',m.correct_share[given]??'',m.lean[given]??'',
+        m.status,m.skew,p].map(q).join(','));
     }));
   }
   const blob=new Blob([lines.join('\n')],{type:'text/csv'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='paperfold_confusion_'+CFM.scope.runs.length+'_runs.csv';
+  a.download='confusion_'+CFM.experiment.name+'.csv';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
   toast('CSV downloaded','ok');
@@ -2985,13 +2671,13 @@ function cfmDownloadCsv(){
 // into Downloads because a browser can't, and falls back to downloading each
 // PNG on its own where it can't (Colab).
 async function cfmDownloadAllGraphs(){
-  if(!CFM||!CFM.plots||!CFM.plots.length){toast('Build the matrices first','err');return;}
+  if(!CFM||!CFM.plots||!CFM.plots.length){toast('Pick an experiment first','err');return;}
   const btn=$('cfmDownloadAllBtn'); btn.disabled=true;
   try{
     const s=await api('/api/paperfold/confusion/plots/save','POST',{slug:CFM.slug});
-    if(s.ok){toast(`Saved ${s.count} charts to ${s.short}`,'ok');return;}
+    if(s.ok){toast(`Saved ${s.count} matrices to ${s.short}`,'ok');return;}
     if(!s.fallback){toast('Error: '+s.error,'err');return;}
-    toast(`Downloading ${CFM.plots.length} charts…`,'ok');
+    toast(`Downloading ${CFM.plots.length} matrices…`,'ok');
     await triggerDownloads(CFM.plots.map(f=>
       '/api/paperfold/confusion/plot?slug='+encodeURIComponent(CFM.slug)+
       '&file='+encodeURIComponent(f)+'&download=1'));
